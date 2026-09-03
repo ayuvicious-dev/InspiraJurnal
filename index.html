@@ -17543,6 +17543,11 @@ let bukuBesarAkun = '';
 let bukuBesarSearch = '';
 let bukuBesarFilter = { mode:'semua', dari:'', sampai:'' };
 let bukuBesarPage = 1; // halaman aktif list transaksi buku besar (dibatasi 5 baris/halaman biar page tidak berat)
+// Filter khusus akun Kewajiban (KW/hutang): kalau aktif, tabel cuma nampilin transaksi kredit
+// (nambah hutang) yang sisanya belum dilunasi, dihitung otomatis lewat FIFO (lihat
+// hitungSisaHutangFifo) -- jadi TETAP kedeteksi meski transaksinya tidak pernah dicentang
+// "Reminder Payment" (beda dari kartu Reminder di Dashboard yang cuma nampilin yang direminder).
+let bukuBesarHanyaBelumBayar = false;
 const BUKUBESAR_PER_PAGE = 5;
 let bukuBesarSemuaPage = {}; // halaman aktif PER AKUN di tampilan "Buku Besar — Semua Akun" (key: akun.id)
 function bukuBesarDateRange(){
@@ -17569,7 +17574,7 @@ RENDERERS.bukubesar = function(c){
   </div>
   <div id="bbResult" style="margin-top:14px"></div>`;
   c.innerHTML = html;
-  bindAkunPicker('bbAkun', akunId=>{ bukuBesarAkun=akunId; bukuBesarPage=1; renderBukuBesarResult(); });
+  bindAkunPicker('bbAkun', akunId=>{ bukuBesarAkun=akunId; bukuBesarPage=1; bukuBesarHanyaBelumBayar=false; renderBukuBesarResult(); });
   bindSearchInput('bbSearch', v=>{ bukuBesarSearch=v; bukuBesarPage=1; bukuBesarSemuaPage={}; renderBukuBesarResult(); });
   document.getElementById('bbMode').addEventListener('change', e=>{ bukuBesarFilter.mode=e.target.value; bukuBesarPage=1; bukuBesarSemuaPage={}; renderContent(); });
   const bbDariEl = document.getElementById('bbDari'); if(bbDariEl) bbDariEl.addEventListener('change', e=>{ bukuBesarFilter.dari=e.target.value; bukuBesarPage=1; bukuBesarSemuaPage={}; renderBukuBesarResult(); });
@@ -17878,27 +17883,72 @@ function renderBukuBesarSemuaAkunResult(wrap){
     renderBukuBesarSemuaAkunResult(wrap);
   }));
 }
+// Hitung sisa belum dibayar per transaksi KREDIT (nambah hutang) di 1 akun Kewajiban (KW),
+// pakai pencocokan FIFO: hutang yang paling lama dianggap dilunasi duluan oleh
+// debit/pembayaran berikutnya (siapa pun akun lawannya -- Kas/Bank, akun KW lain kalau ada
+// jurnal reklasifikasi, dll). Dihitung dari SELURUH riwayat jurnal akun ini (tanpa peduli
+// filter tanggal/pencarian yang sedang aktif di tampilan), supaya pembayaran yang terjadi di
+// luar rentang tanggal yang sedang ditampilkan tetap ikut mengurangi sisa hutang lamanya.
+// Return: { [jurnalId]: sisaBelumDibayar } -- cuma diisi utk baris kredit yang sisanya >0.
+function hitungSisaHutangFifo(akunId){
+  const semua = DB.jurnal.filter(j=> j.debitId===akunId || j.kreditId===akunId)
+    .slice().sort((a,b)=> a.tanggal<b.tanggal?-1:(a.tanggal>b.tanggal?1:((a.no||0)-(b.no||0))));
+  const lots = []; // antrian hutang terbuka, urut dari yang paling lama
+  semua.forEach(j=>{
+    if(j.kreditId===akunId){
+      lots.push({ id:j.id, sisa:Number(j.nominal)||0 });
+    } else if(j.debitId===akunId){
+      let bayar = Number(j.nominal)||0;
+      for(const lot of lots){
+        if(bayar<=0) break;
+        if(lot.sisa<=0) continue;
+        const potong = Math.min(lot.sisa, bayar);
+        lot.sisa -= potong;
+        bayar -= potong;
+      }
+      // Kalau pembayaran melebihi total hutang yang ada, kelebihannya diabaikan di sini
+      // (bukan dianggap piutang) -- di luar cakupan filter ini.
+    }
+  });
+  const out = {};
+  lots.forEach(l=>{ if(l.sisa>0) out[l.id]=l.sisa; });
+  return out;
+}
 function renderBukuBesarResult(){
   const wrap = document.getElementById('bbResult'); if(!wrap) return;
   if(!bukuBesarAkun){ renderBukuBesarSemuaAkunResult(wrap); return; }
   const akun = akunById(bukuBesarAkun);
   const isDebitNormal = normalIsDebit(akun.kategori);
+  const isHutangAkun = akun.kategori==='KW';
+  const showHanyaBelumBayar = isHutangAkun && bukuBesarHanyaBelumBayar;
   const [bbDari, bbSampai] = bukuBesarDateRange();
   let running = bbDari ? saldoAkun(akun.id, dateMinus1Day(bbDari)) : 0;
   const saldoAwalRunning = running;
   const rows = DB.jurnal.filter(j=> (j.debitId===akun.id||j.kreditId===akun.id) && matchSearch(j.keterangan, bukuBesarSearch) && (!bbDari || j.tanggal>=bbDari) && (!bbSampai || j.tanggal<=bbSampai));
-  const exportRowsXlsx = []; // dipakai bareng untuk Excel & PDF: Tanggal, No. Transaksi, Keterangan, Debit, Kredit, Saldo Berjalan, Tag
-  const headersXlsx = ['Tanggal','No. Transaksi','Keterangan','Debit','Kredit','Saldo Berjalan','Tag'];
+  // Sisa hutang per transaksi kredit dihitung FIFO dari SELURUH riwayat akun ini (bukan cuma
+  // yang lolos filter tanggal/pencarian di atas) -- lihat hitungSisaHutangFifo.
+  const sisaHutangMap = isHutangAkun ? hitungSisaHutangFifo(akun.id) : null;
+  const exportRowsXlsx = []; // dipakai bareng untuk Excel & PDF, kolomnya mengikuti mode tampilan (lihat headersXlsx)
+  const headersXlsx = showHanyaBelumBayar
+    ? ['Tanggal','No. Transaksi','Keterangan','Nominal Hutang','Sisa Belum Dibayar','Tag']
+    : ['Tanggal','No. Transaksi','Keterangan','Debit','Kredit','Saldo Berjalan','Tag'];
   // ---- Saldo berjalan harus dihitung berurutan lewat SEMUA baris (bukan cuma yang tampil di
   // halaman aktif), supaya angkanya tetap benar walau tabel dipaging. Hasil tiap baris (dengan
-  // saldo berjalannya) disimpan dulu di rowsComputed, baru bagian yang ditampilkan di-slice per
-  // halaman (BUKUBESAR_PER_PAGE baris) supaya page tidak berat saat di-klik.
-  const rowsComputed = rows.map(j=>{
+  // saldo berjalan & sisa hutangnya) disimpan dulu di rowsComputedAll, baru kalau filter "Hanya
+  // Belum Dibayar" aktif disaring lagi (cuma baris kredit yang sisanya >0), baru bagian yang
+  // ditampilkan di-slice per halaman (BUKUBESAR_PER_PAGE baris) supaya page tidak berat.
+  const rowsComputedAll = rows.map(j=>{
     const isDebit = j.debitId===akun.id;
     const delta = isDebit? (isDebitNormal?j.nominal:-j.nominal) : (isDebitNormal?-j.nominal:j.nominal);
     running += delta;
-    exportRowsXlsx.push([fmtTgl(j.tanggal), j.no, j.keterangan||'', isDebit?j.nominal:'', !isDebit?j.nominal:'', running, (j.tags||[]).join(', ')]);
-    return { j, isDebit, running };
+    const sisa = (sisaHutangMap && !isDebit) ? (sisaHutangMap[j.id]||0) : 0;
+    return { j, isDebit, running, sisa };
+  });
+  const rowsComputed = showHanyaBelumBayar ? rowsComputedAll.filter(r=> !r.isDebit && r.sisa>0) : rowsComputedAll;
+  const totalBelumBayar = showHanyaBelumBayar ? rowsComputed.reduce((s,r)=> s+r.sisa, 0) : 0;
+  rowsComputed.forEach(({j, isDebit, running, sisa})=>{
+    if(showHanyaBelumBayar) exportRowsXlsx.push([fmtTgl(j.tanggal), j.no, j.keterangan||'', j.nominal, sisa, (j.tags||[]).join(', ')]);
+    else exportRowsXlsx.push([fmtTgl(j.tanggal), j.no, j.keterangan||'', isDebit?j.nominal:'', !isDebit?j.nominal:'', running, (j.tags||[]).join(', ')]);
   });
   const ioCfg = {
     template:{ filename:'template-buku-besar.xlsx', sheetName:'Buku Besar', headers:['Tanggal (DD/MM/YY)','Keterangan','Debit','Kredit','Akun Lawan','Tag (pisahkan koma)'],
@@ -17906,10 +17956,12 @@ function renderBukuBesarResult(){
     onImport: importBukuBesarRows,
     exportExcel: ()=>({ filename:'buku-besar-'+akun.nama.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.xlsx', sheetName:'Buku Besar', headers:headersXlsx, rows: exportRowsXlsx }),
     exportPdf: ()=>({ filename:'buku-besar-'+akun.nama.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.pdf', title:'Buku Besar — '+akun.nama, headers:headersXlsx,
-      rows: exportRowsXlsx.map(r=> [r[0], r[1], r[2], r[3]!==''?fmtRp(r[3]):'', r[4]!==''?fmtRp(r[4]):'', fmtRp(r[5]), r[6]]),
+      rows: showHanyaBelumBayar
+        ? exportRowsXlsx.map(r=> [r[0], r[1], r[2], fmtRp(r[3]), fmtRp(r[4]), r[5]])
+        : exportRowsXlsx.map(r=> [r[0], r[1], r[2], r[3]!==''?fmtRp(r[3]):'', r[4]!==''?fmtRp(r[4]):'', fmtRp(r[5]), r[6]]),
       opts:{ headColor:[20,20,20] } })
   };
-  const visibleIds = rows.map(j=>j.id);
+  const visibleIds = rowsComputed.map(r=>r.j.id);
   // ---- Pagination: tabel mutasi dibatasi BUKUBESAR_PER_PAGE (5) baris per halaman supaya
   // page tidak terlalu berat. Navigasi halaman ada di kanan bawah tabel.
   const bbTotalPages = Math.max(1, Math.ceil(rowsComputed.length / BUKUBESAR_PER_PAGE));
@@ -17919,14 +17971,21 @@ function renderBukuBesarResult(){
   const bbPageItems = rowsComputed.slice(bbPageStart, bbPageStart + BUKUBESAR_PER_PAGE);
   let html = `<div class="card">
     <div class="section-title"><h3>${akun.nama} <span class="mini">(${KAT[akun.kategori]} — ${akun.kepemilikan})</span></h3><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="hint">Saldo saat ini: <b>${fmtRp(saldoAkun(akun.id))}</b></span>${ioToolbarHtml('bukubesar', ioCfg)}</div></div>
+    ${isHutangAkun ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:-4px 0 12px;font-size:13px">
+      <input type="checkbox" id="bbHanyaBelumBayar" style="width:16px;height:16px;flex:none" ${bukuBesarHanyaBelumBayar?'checked':''}>
+      Tampilkan hanya Hutang Belum Dibayar <span class="mini">(dihitung otomatis FIFO — hutang paling lama dianggap dilunasi duluan, tidak tergantung centang "Reminder Payment")</span>
+    </label>` : ''}
     ${bulkBarHtml('bukubesar', visibleIds)}
-    <div class="tablewrap"><table class="sheet"><thead><tr>${bulkCheckboxTh('bukubesar')}<th>Aksi</th><th>Tanggal</th><th>Keterangan</th><th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th><th>Tag</th></tr></thead><tbody>
-    ${(bbDari && bukuBesarPage===1)?`<tr><td></td><td></td><td>${fmtTgl(bbDari)}</td><td class="wrap-cell"><i>Saldo Awal</i></td><td class="num"></td><td class="num"></td><td class="num">${fmtRp(saldoAwalRunning)}</td><td></td></tr>`:''}`;
-  bbPageItems.forEach(({j, isDebit, running})=>{
-    html += `<tr>${bulkCheckboxTd('bukubesar',j.id)}<td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null})}</td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td class="num">${isDebit?fmtRp(j.nominal):''}</td><td class="num">${!isDebit?fmtRp(j.nominal):''}</td><td class="num">${fmtRp(running)}</td><td>${tagChipsHtml(j.tags)}</td></tr>`;
+    <div class="tablewrap"><table class="sheet"><thead><tr>${bulkCheckboxTh('bukubesar')}<th>Aksi</th><th>Tanggal</th><th>Keterangan</th>${showHanyaBelumBayar ? '<th>Nominal Hutang</th><th>Sisa Belum Dibayar</th>' : '<th>Debit</th><th>Kredit</th><th>Saldo Berjalan</th>'}<th>Tag</th></tr></thead><tbody>
+    ${(!showHanyaBelumBayar && bbDari && bukuBesarPage===1)?`<tr><td></td><td></td><td>${fmtTgl(bbDari)}</td><td class="wrap-cell"><i>Saldo Awal</i></td><td class="num"></td><td class="num"></td><td class="num">${fmtRp(saldoAwalRunning)}</td><td></td></tr>`:''}`;
+  bbPageItems.forEach(({j, isDebit, running, sisa})=>{
+    html += showHanyaBelumBayar
+      ? `<tr>${bulkCheckboxTd('bukubesar',j.id)}<td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null})}</td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td class="num">${fmtRp(j.nominal)}</td><td class="num">${fmtRp(sisa)}</td><td>${tagChipsHtml(j.tags)}</td></tr>`
+      : `<tr>${bulkCheckboxTd('bukubesar',j.id)}<td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null})}</td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td class="num">${isDebit?fmtRp(j.nominal):''}</td><td class="num">${!isDebit?fmtRp(j.nominal):''}</td><td class="num">${fmtRp(running)}</td><td>${tagChipsHtml(j.tags)}</td></tr>`;
   });
-  if(rowsComputed.length===0) html += `<tr><td colspan="8" class="empty">Belum ada transaksi${bbDari||bbSampai?' pada periode ini':''}</td></tr>`;
+  if(rowsComputed.length===0) html += `<tr><td colspan="${showHanyaBelumBayar?7:8}" class="empty">${showHanyaBelumBayar?'Tidak ada hutang yang belum dibayar':'Belum ada transaksi'+(bbDari||bbSampai?' pada periode ini':'')}</td></tr>`;
   html += `</tbody></table></div>
+  ${showHanyaBelumBayar && rowsComputed.length>0 ? `<div class="mini" style="margin-top:10px;text-align:right;font-weight:600">Total Belum Dibayar (dari ${rowsComputed.length} transaksi di atas): ${fmtRp(totalBelumBayar)}</div>` : ''}
   ${bbTotalPages > 1 ? `<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:14px">
     <span class="mini">Halaman ${bukuBesarPage} dari ${bbTotalPages}</span>
     <button class="btn small" id="btnBbPrevPage" ${bukuBesarPage<=1?'disabled':''}>‹ Sebelumnya</button>
@@ -17941,6 +18000,8 @@ function renderBukuBesarResult(){
   if(btnBbPrev) btnBbPrev.addEventListener('click', ()=>{ if(bukuBesarPage>1){ bukuBesarPage--; renderBukuBesarResult(); } });
   const btnBbNext = document.getElementById('btnBbNextPage');
   if(btnBbNext) btnBbNext.addEventListener('click', ()=>{ bukuBesarPage++; renderBukuBesarResult(); });
+  const bbHanyaBelumBayarEl = document.getElementById('bbHanyaBelumBayar');
+  if(bbHanyaBelumBayarEl) bbHanyaBelumBayarEl.addEventListener('change', e=>{ bukuBesarHanyaBelumBayar = e.target.checked; bukuBesarPage=1; renderBukuBesarResult(); });
 }
 
 /* ================= KAS & BANK ================= */
