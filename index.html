@@ -4740,12 +4740,20 @@ RENDERERS.dashboard = function(c){
   // Reminder pembayaran hutang dari Pembelian ("Dikreditkan melalui") maupun Jurnal Umum (baris
   // Kredit) yang memakai akun Kewajiban (KW) dan dicentang Reminder Payment saat dicatat, digabung
   // jadi 1 daftar lalu diurutkan dari tanggal reminder paling mendesak.
+  // PENTING soal dedup: transaksi Pembelian & Biaya masing-masing sudah punya baris sendiri di
+  // DB.pembelian/DB.biaya (itu sumber utamanya) DAN juga otomatis bikin 1 baris di DB.jurnal
+  // (ref 'pembelian-<id>'/'biaya-<id>'/'biaya-bayar-<id>'). Kalau jurnal turunan itu kebetulan ikut
+  // ditandai Reminder Payment sendiri (misalnya pernah diedit langsung lewat Buku Besar/Riwayat
+  // Jurnal), transaksi yang sama bisa kehitung 2x kalau jurnalnya tidak dikecualikan di sini —
+  // makanya baris DB.jurnal di bawah sengaja membuang ref yang berawalan 'pembelian-'/'biaya-'.
+  // Jurnal dari Aset (ref 'aset-perolehan-') TIDAK dikecualikan karena memang cuma dilacak lewat
+  // jurnalnya (tidak ada baris DB.aset terpisah di daftar ini), jadi itu satu-satunya sumbernya.
   const hutangReminderList = [
     ...DB.pembelian.filter(p=> p.reminderPayment && p.reminderTanggal && !p.reminderLunas).map(p=>{
       const item = (p.tipe||'bahan')==='barang' ? DB.barang.find(i=>i.id===(p.refId||p.produkId)) : DB.produk.find(i=>i.id===(p.refId||p.produkId));
       return { src:'pembelian', obj:p, sisa: daysUntil(p.reminderTanggal), nama: p.keterangan || item?.nama || '-', akunId: p.bayarId, akunNama: akunById(p.bayarId)?.nama||'?', nominal: p.total };
     }),
-    ...DB.jurnal.filter(j=> j.reminderPayment && j.reminderTanggal && !j.reminderLunas).map(j=>({
+    ...DB.jurnal.filter(j=> j.reminderPayment && j.reminderTanggal && !j.reminderLunas && !(j.ref && (j.ref.indexOf('pembelian-')===0 || j.ref.indexOf('biaya-')===0))).map(j=>({
       src:'jurnal', obj:j, sisa: daysUntil(j.reminderTanggal), nama: j.keterangan || akunById(j.debitId)?.nama || '-', akunId: j.kreditId, akunNama: akunById(j.kreditId)?.nama||'?', nominal: j.nominal
     })),
     ...DB.biaya.filter(b=> b.reminderPayment && b.reminderTanggal && !b.reminderLunas).map(b=>({
@@ -4756,14 +4764,22 @@ RENDERERS.dashboard = function(c){
   // ini tidak terlalu panjang), pakai navigasi Sebelumnya/Selanjutnya generik yang sama seperti
   // tabel riwayat di fitur input lain.
   const hutangReminderPg = paginateRows('dashboardHutang', hutangReminderList, 5);
+  // Jumlah keseluruhan hutang dari SEMUA transaksi yang tampil di daftar reminder ini (bukan
+  // cuma yang lagi ditampilkan di halaman aktif), dipakai buat baris total di bawah tabel.
+  const totalHutangReminder = hutangReminderList.reduce((s,x)=> s + (Number(x.nominal)||0), 0);
   html += `<div class="card" style="margin-top:14px">
     <div class="section-title"><h3>💳 Reminder: Pembayaran Hutang</h3><span class="hint">${hutangReminderList.length} transaksi</span></div>
+    ${hutangReminderList.length? `<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:2px 0 12px">
+      <div class="field" style="margin:0"><label style="font-size:12px">Bayar Semua Hutang Jatuh Tempo s.d. Tanggal</label><input type="date" id="hutangBayarSemuaTgl" value="${todayStr()}"></div>
+      <button type="button" class="btn small" id="btnBayarSemuaHutang">💳 Bayar Semua Hutang Jatuh Tempo</button>
+    </div>` : ''}
     ${hutangReminderList.length? `<div class="tablewrap"><table class="sheet"><thead><tr><th>Aksi</th><th>Item/Keterangan</th><th>Akun Hutang</th><th>Tanggal Reminder</th><th>Sisa</th></tr></thead><tbody>
     ${hutangReminderPg.pageRows.map(x=>{
       const lewat = x.sisa!==null && x.sisa<0;
       return `<tr><td><button type="button" class="btn small bayarReminderHutang" data-src="${x.src}" data-id="${x.obj.id}" data-akunid="${x.akunId||''}" data-nominal="${x.nominal||0}">Bayar</button></td><td class="wrap-cell">${escHtml(x.nama)}</td><td>${x.akunNama}</td><td>${fmtTgl(x.obj.reminderTanggal)}</td><td><span class="chip ${lewat?'low':'warn'}">${lewat?'⛔ lewat '+Math.abs(x.sisa)+' hr':'⏰ H-'+x.sisa}</span></td></tr>`;
     }).join('')}
-    </tbody></table></div>${paginationBarHtml('dashboardHutang', hutangReminderPg.page, hutangReminderPg.totalPages, hutangReminderPg.total, hutangReminderPg.pageSize)}` : '<div class="mini">Belum ada reminder pembayaran hutang. Centang "Reminder Payment" saat mencatat Pembelian, Biaya, atau Jurnal Umum yang dikreditkan/dibayar melalui akun hutang supaya muncul di sini.</div>'}
+    </tbody></table></div>${paginationBarHtml('dashboardHutang', hutangReminderPg.page, hutangReminderPg.totalPages, hutangReminderPg.total, hutangReminderPg.pageSize)}
+    <div class="mini" style="margin-top:10px;text-align:right;font-weight:600">Jumlah Keseluruhan Hutang (dari ${hutangReminderList.length} transaksi reminder di atas): ${fmtRp(totalHutangReminder)}</div>` : '<div class="mini">Belum ada reminder pembayaran hutang. Centang "Reminder Payment" saat mencatat Pembelian, Biaya, atau Jurnal Umum yang dikreditkan/dibayar melalui akun hutang supaya muncul di sini.</div>'}
   </div>`;
 
   const RECENT_SUMBER = ['Jurnal Umum','Pembelian','Biaya','Aset'];
@@ -4855,6 +4871,18 @@ RENDERERS.dashboard = function(c){
     const nominal = Number(btn.dataset.nominal)||0;
     openBayarHutangModal([{ akunId, nominal }]);
   }));
+
+  // Tombol "Bayar Semua Hutang Jatuh Tempo": ambil tanggal batas dari input di sebelahnya, lalu
+  // saring hutangReminderList (daftar penuh, bukan cuma 1 halaman) untuk transaksi yang Tanggal
+  // Reminder-nya sudah jatuh tempo pada/sebelum tanggal itu (termasuk yang sudah lewat/⛔),
+  // lalu buka modal pembayaran massal (openBayarSemuaHutangModal) buat konfirmasi & pilih Kas/Bank.
+  c.querySelector('#btnBayarSemuaHutang')?.addEventListener('click', ()=>{
+    const cutoff = document.getElementById('hutangBayarSemuaTgl')?.value;
+    if(!cutoff) return toast('Pilih tanggal batas jatuh tempo dulu');
+    const due = hutangReminderList.filter(x=> x.obj.reminderTanggal && x.obj.reminderTanggal <= cutoff);
+    if(!due.length) return toast('Tidak ada hutang yang jatuh tempo sampai dengan tanggal tersebut');
+    openBayarSemuaHutangModal(due);
+  });
 };
 
 /* ================= COA ================= */
@@ -9100,6 +9128,47 @@ function openBayarHutangModal(hutangLines){
     const hutangAkun = akunById(hutangAkunId);
     postJurnal({ tanggal:tgl, keterangan:'Bayar hutang: '+(hutangAkun?hutangAkun.nama:''), debitId:hutangAkunId, kreditId:kasId, nominal:nom, sumber:'Pembayaran Hutang' });
     save(); m.remove(); document.getElementById('detailDrawer')?.remove(); renderContent(); toast('Pembayaran hutang tersimpan');
+  });
+}
+
+/* Modal "Bayar Semua Hutang Jatuh Tempo" — dipanggil dari tombol massal di kartu Reminder:
+   Pembayaran Hutang (Dashboard). Beda dari openBayarHutangModal (yang cuma bayar 1 transaksi
+   per submit): di sini semua transaksi yang jatuh tempo s.d. tanggal yang dipilih user langsung
+   dibuatkan jurnal pembayarannya sekaligus (1 jurnal per transaksi, akun hutang & nominal
+   masing-masing sesuai baris di daftar), dari 1 akun Kas/Bank yang sama & 1 tanggal pembayaran
+   yang sama. Setelah tersimpan, tiap transaksi ditandai reminderLunas=true supaya hilang dari
+   daftar reminder (tidak ditagih ulang lain kali). */
+function openBayarSemuaHutangModal(lines){
+  if(!lines || !lines.length) return;
+  const total = lines.reduce((s,x)=> s + (Number(x.nominal)||0), 0);
+  const rowsHtml = lines.map(x=> `<tr><td class="wrap-cell">${escHtml(x.nama)}</td><td>${x.akunNama}</td><td>${fmtTgl(x.obj.reminderTanggal)}</td><td class="num">${fmtRp(x.nominal)}</td></tr>`).join('');
+  const m = openFormModal('Bayar Semua Hutang Jatuh Tempo', `
+    <div class="mini" style="margin-bottom:8px">${lines.length} transaksi hutang berikut akan dibayar lunas sekaligus, total ${fmtRp(total)}:</div>
+    <div class="tablewrap" style="max-height:220px;overflow:auto">
+      <table class="sheet"><thead><tr><th>Item/Keterangan</th><th>Akun Hutang</th><th>Tgl Reminder</th><th>Nominal</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    </div>
+    <div class="formgrid" style="margin-top:12px">
+      <div class="field" style="grid-column:span 2"><label>Tanggal Pembayaran</label><input type="date" id="bshTgl" value="${todayStr()}"></div>
+      <div class="field" style="grid-column:span 2"><label>Akun Kas/Bank</label>${akunPickerHtml('bshKas', isKasBank, 'Ketik nama akun kas/bank...')}</div>
+    </div>
+    <div class="mini" style="margin:6px 0">Menyimpan akan membuat ${lines.length} jurnal pembayaran sekaligus (satu per transaksi hutang di atas): tiap jurnal mengurangi hutang terkait di Neraca &amp; mengurangi saldo akun Kas/Bank yang dipilih.</div>
+    <button class="btn primary" id="bshSave" style="margin-top:6px;width:100%">Bayar Semua (${fmtRp(total)})</button>
+  `, 'bayarSemuaHutangModal');
+  bindAllAkunPickers(m);
+  m.querySelector('#bshSave').addEventListener('click', ()=>{
+    const tgl = document.getElementById('bshTgl').value;
+    const kasId = document.getElementById('bshKas').value;
+    if(!tgl) return toast('Tanggal wajib diisi');
+    if(!kasId) return toast('Pilih akun Kas/Bank');
+    lines.forEach(x=>{
+      const hutangAkun = akunById(x.akunId);
+      postJurnal({ tanggal:tgl, keterangan:'Bayar hutang: '+(x.nama||hutangAkun?.nama||''), debitId:x.akunId, kreditId:kasId, nominal:x.nominal, sumber:'Pembayaran Hutang' });
+      x.obj.reminderLunas = true;
+      markDirtySync(x.obj.id);
+    });
+    save(); m.remove(); document.getElementById('detailDrawer')?.remove(); renderContent();
+    toast('Pembayaran '+lines.length+' hutang tersimpan');
   });
 }
 
