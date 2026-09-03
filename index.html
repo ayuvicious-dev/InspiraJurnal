@@ -18188,6 +18188,7 @@ function openEditAsetModal(a){
       <div class="field" id="eaFieldMasa" style="grid-column:span 2"><label>Masa Manfaat (hari)</label><input type="number" id="eaMasa" placeholder="mis. 1460" value="${a.masaManfaatHari||''}"></div>
       <div class="field" id="eaFieldBerat" style="display:none;grid-column:span 2"><label>Berat (gram) — khusus Logam Mulia/Emas</label><input type="number" step="0.01" id="eaBerat" placeholder="mis. 10" value="${a.beratGram||''}"></div>
       <div class="field" id="eaFieldBeban" style="grid-column:span 2"><label>Akun Beban Penyusutan (masuk Laba Rugi)</label>${akunPickerHtml('eaAkunBeban', akun=>akun.kategori==='BO', 'Ketik nama akun beban penyusutan...', a.akunBebanId)}</div>
+      <div class="field" style="grid-column:span 2"><label title="Sumber dana / kas, utang, atau modal saat aset ini diperoleh">Akun yang Dikreditkan</label>${akunPickerHtml('eaAkunKredit', akun=>['AL','KW','MD'].includes(akun.kategori), 'Ketik nama akun kas/utang/modal...', a.akunKreditId)}</div>
       <div id="eaReminderWrap" style="display:${isHutangAwal?'':'none'};grid-column:span 2">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="eaReminderCheck" style="width:16px;height:16px;flex:none" ${a.reminderPayment?'checked':''}> Reminder Payment</label>
         <input type="date" id="eaReminderTgl" style="display:${a.reminderPayment?'':'none'};margin-top:6px" value="${a.reminderTanggal||''}" placeholder="Tanggal reminder">
@@ -18218,6 +18219,17 @@ function openEditAsetModal(a){
     eaReminderTgl.style.display = eaReminderCheck.checked ? '' : 'none';
     if(!eaReminderCheck.checked) eaReminderTgl.value='';
   });
+  /* "Akun yang Dikreditkan" sekarang bisa diubah di form edit juga — kalau akun baru yang dipilih
+     berkategori Kewajiban (KW/hutang), tampilkan kolom Reminder Payment; kalau bukan, sembunyikan
+     dan reset centangnya (sama seperti perilaku form Tambah Aset). */
+  function updateEaReminderVisibility(){
+    if(!eaReminderWrap) return;
+    const akun = akunById(document.getElementById('eaAkunKredit')?.value);
+    const isHutang = !!(akun && akun.kategori==='KW');
+    eaReminderWrap.style.display = isHutang ? '' : 'none';
+    if(!isHutang){ eaReminderCheck.checked=false; eaReminderTgl.style.display='none'; eaReminderTgl.value=''; }
+  }
+  if(eaReminderWrap) AKUN_PICKER_ONSELECT['eaAkunKredit'] = updateEaReminderVisibility;
   m.querySelector('#eaSave').addEventListener('click', ()=>{
     const nama = document.getElementById('eaNama').value.trim();
     const jenis = document.getElementById('eaJenis').value.trim();
@@ -18230,11 +18242,13 @@ function openEditAsetModal(a){
     if(!jenis) return toast('Jenis Aset wajib diisi');
     if(!tgl) return toast('Tanggal Perolehan wajib diisi');
     if(!biaya || biaya<=0) return toast('Biaya Akuisisi tidak valid');
-    const akunKredit = akunById(a.akunKreditId);
+    const akunKreditBaru = document.getElementById('eaAkunKredit')?.value || '';
+    if(!akunKreditBaru) return toast('Akun yang Dikreditkan wajib diisi');
+    const akunKredit = akunById(akunKreditBaru);
     const isHutang = !!(akunKredit && akunKredit.kategori==='KW');
     const reminderPayment = isHutang && eaReminderCheck.checked;
     if(reminderPayment && !eaReminderTgl.value) return toast('Isi Tanggal Reminder untuk akun hutang yang dicentang Reminder Payment');
-    a.nama = nama; a.jenis = jenis; a.tanggalPerolehan = tgl; a.biayaAkuisisi = biaya; a.nilaiResidu = residu; a.masaManfaatHari = masa; a.nonDepresiasi = nonDepresiasi;
+    a.nama = nama; a.jenis = jenis; a.tanggalPerolehan = tgl; a.biayaAkuisisi = biaya; a.nilaiResidu = residu; a.masaManfaatHari = masa; a.nonDepresiasi = nonDepresiasi; a.akunKreditId = akunKreditBaru;
     if(a.jenis && !DB.jenisAsetCustom.includes(a.jenis)) DB.jenisAsetCustom.push(a.jenis);
     const ruanganEdit = (document.getElementById('eaRuangan')?.value||'').split(',').map(s=>s.trim()).filter(Boolean);
     setItemRuangan(a, ruanganEdit);
@@ -18256,7 +18270,9 @@ function openEditAsetModal(a){
     const jPerolehan = DB.jurnal.find(x=>x.ref==='aset-perolehan-'+a.id);
     if(jPerolehan){
       jPerolehan.tanggal=a.tanggalPerolehan; jPerolehan.nominal=biaya; jPerolehan.keterangan='Perolehan aset: '+a.nama+' ('+a.noAset+')'; jPerolehan.tags=a.tags||[];
+      jPerolehan.kreditId = a.akunKreditId;
       if(isHutang){ jPerolehan.reminderPayment=a.reminderPayment; jPerolehan.reminderTanggal=a.reminderTanggal; if(!a.reminderPayment) jPerolehan.reminderLunas=false; }
+      else { jPerolehan.reminderPayment=false; jPerolehan.reminderTanggal=null; jPerolehan.reminderLunas=false; }
     }
     save(); m.remove(); renderContent(); toast('Aset diperbarui');
     if(isLogamMuliaAsset(a) && a.beratGram){ updateHargaPasarLogamMulia(a); }
