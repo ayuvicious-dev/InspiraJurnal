@@ -2127,7 +2127,7 @@ function freshDB(){
     stepKategoriCustom:['Iris','Potong','Thawing','Blender','Tumis','Rebus','Goreng','Kukus','Oven','Air Fryer','Lainnya'],
     menuManualKategoriCustom:[],
     kepemilikanCustom:[],
-    profil:{namaUsaha:'', logoDataUrl:''},
+    profil:{namaUsaha:'', logoDataUrl:'', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48},
     pendingTransaksi:[],
     lrCatatan:{},
     goals:[],
@@ -19195,15 +19195,34 @@ RENDERERS.settings = function(c){
 
   const profilUsahaHtml = `<div class="card" style="margin-bottom:14px">
     <div class="section-title"><h3>Profil Usaha (untuk Laporan PDF)</h3></div>
-    <div class="mini" style="margin-bottom:10px;line-height:1.6">Nama usaha & logo di sini otomatis tampil di bagian atas laporan <b>Neraca</b> & <b>Laba Rugi</b> saat diunduh sebagai PDF.</div>
+    <div class="mini" style="margin-bottom:10px;line-height:1.6">Nama usaha, logo & alamat di sini otomatis tampil di bagian atas laporan <b>Neraca</b> & <b>Laba Rugi</b>, serta di halaman sampul <b>Laporan Lengkap</b>, saat diunduh sebagai PDF.</div>
     <div class="formgrid">
       <div class="field"><label>Nama Usaha</label><input id="profilNamaUsaha" placeholder="Nama usaha/toko" value="${escHtml((DB.profil&&DB.profil.namaUsaha)||'')}"></div>
       <div class="field"><label>Logo (PNG/JPG)</label><input type="file" id="profilLogoInput" accept="image/*"></div>
+      <div class="field" style="grid-column:1/-1"><label>Alamat</label><textarea id="profilAlamat" placeholder="Alamat lengkap usaha, mis. Kavling DPRD II, Jl Mongindisi No. 16, Sidokidumpuk, Bluru Kidul, Kec. Sidoarjo, Kab. Sidoarjo, Jawa Timur, 61218" rows="3" style="resize:vertical">${escHtml((DB.profil&&DB.profil.alamat)||'')}</textarea></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
       ${DB.profil&&DB.profil.logoDataUrl? `<img src="${DB.profil.logoDataUrl}" style="width:52px;height:52px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff;padding:2px">` : '<span class="mini">Belum ada logo tersimpan</span>'}
       <button class="btn small primary" id="btnSimpanProfilUsaha">Simpan Profil</button>
       ${DB.profil&&DB.profil.logoDataUrl? '<button class="btn small danger" id="btnHapusLogoUsaha">Hapus Logo</button>':''}
+    </div>
+    <div class="section-title" style="margin-top:18px"><h3>Cover Kustom (Halaman Sampul Laporan Lengkap)</h3></div>
+    <div class="mini" style="margin-bottom:10px;line-height:1.6">Opsional. Upload gambar cover (mis. hasil desain sendiri seperti contoh "FINANCIAL STATEMENT") untuk dipakai sebagai <b>halaman sampul</b> saat mengunduh <b>Laporan Lengkap</b>, menggantikan cover bawaan. Gambar akan memenuhi 1 halaman penuh (mode cover, kelebihan tepi dipotong otomatis), dan teks <b>periode laporan</b> akan ditempel otomatis di posisi yang kamu atur.</div>
+    <div class="formgrid">
+      <div class="field"><label>Gambar Cover (PNG/JPG)</label><input type="file" id="profilCoverInput" accept="image/*"></div>
+      <div class="field"><label>Judul Tambahan (mis. "GIRO PRK")</label><input id="profilCoverJudul" placeholder="Opsional, mis. GIRO PRK" value="${escHtml((DB.profil&&DB.profil.coverJudul)||'')}"></div>
+      <div class="field"><label>Posisi Judul Tambahan (% dari atas)</label><input type="number" id="profilCoverJudulY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.coverJudulY!=null?DB.profil.coverJudulY:48}"></div>
+      <div class="field"><label>Posisi Teks Periode (% dari atas)</label><input type="number" id="profilCoverPeriodeY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.coverPeriodeY!=null?DB.profil.coverPeriodeY:58}"></div>
+      <div class="field"><label>Warna Teks Periode &amp; Judul</label><select id="profilCoverPeriodeColor">
+        <option value="dark" ${(!DB.profil||!DB.profil.coverPeriodeColor||DB.profil.coverPeriodeColor==='dark')?'selected':''}>Gelap (untuk latar terang)</option>
+        <option value="light" ${DB.profil&&DB.profil.coverPeriodeColor==='light'?'selected':''}>Terang (untuk latar gelap)</option>
+      </select></div>
+    </div>
+    <div class="mini" style="margin:2px 0 8px">Contoh: kalau tulisan "FINANCIAL STATEMENT" di gambar cover-mu ada di sekitar tengah halaman, coba isi posisi <b>Judul Tambahan</b> sekitar 46-50% dan <b>Teks Periode</b> sekitar 55-62% supaya keduanya muncul berurutan tepat di bawah judul cover. Teks periode akan otomatis ditampilkan dalam format "Periode &lt;Nama Bulan&gt;" (bukan rentang tanggal).</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:6px;flex-wrap:wrap">
+      ${DB.profil&&DB.profil.coverDataUrl? `<img src="${DB.profil.coverDataUrl}" style="width:52px;height:74px;object-fit:cover;border:1px solid var(--line);border-radius:8px;background:#fff">` : '<span class="mini">Belum ada cover kustom — sampul akan pakai desain bawaan</span>'}
+      <button class="btn small primary" id="btnSimpanCoverUsaha">Simpan Cover</button>
+      ${DB.profil&&DB.profil.coverDataUrl? '<button class="btn small danger" id="btnHapusCoverUsaha">Hapus Cover</button>':''}
     </div>
   </div>`;
 
@@ -19381,8 +19400,9 @@ RENDERERS.settings = function(c){
     }));
     const btnSimpanProfilUsaha = document.getElementById('btnSimpanProfilUsaha');
     if(btnSimpanProfilUsaha) btnSimpanProfilUsaha.addEventListener('click', ()=>{
-      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:''};
+      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:''};
       DB.profil.namaUsaha = document.getElementById('profilNamaUsaha').value.trim();
+      DB.profil.alamat = document.getElementById('profilAlamat').value.trim();
       const fileInp = document.getElementById('profilLogoInput');
       const file = fileInp && fileInp.files[0];
       if(file){
@@ -19394,8 +19414,37 @@ RENDERERS.settings = function(c){
     });
     const btnHapusLogoUsaha = document.getElementById('btnHapusLogoUsaha');
     if(btnHapusLogoUsaha) btnHapusLogoUsaha.addEventListener('click', ()=>{
-      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:''};
+      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:''};
       DB.profil.logoDataUrl = ''; save(); toast('Logo dihapus'); renderContent();
+    });
+    const btnSimpanCoverUsaha = document.getElementById('btnSimpanCoverUsaha');
+    if(btnSimpanCoverUsaha) btnSimpanCoverUsaha.addEventListener('click', ()=>{
+      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48};
+      let yVal = parseFloat(document.getElementById('profilCoverPeriodeY').value);
+      if(isNaN(yVal)) yVal = 58;
+      yVal = Math.max(0, Math.min(100, yVal));
+      DB.profil.coverPeriodeY = yVal;
+      let judulYVal = parseFloat(document.getElementById('profilCoverJudulY').value);
+      if(isNaN(judulYVal)) judulYVal = 48;
+      judulYVal = Math.max(0, Math.min(100, judulYVal));
+      DB.profil.coverJudulY = judulYVal;
+      DB.profil.coverJudul = document.getElementById('profilCoverJudul').value.trim();
+      DB.profil.coverPeriodeColor = document.getElementById('profilCoverPeriodeColor').value === 'light' ? 'light' : 'dark';
+      const coverInp = document.getElementById('profilCoverInput');
+      const coverFile = coverInp && coverInp.files[0];
+      if(coverFile){
+        // Cover dipakai sebagai gambar 1 halaman penuh (bukan thumbnail kecil seperti logo),
+        // jadi resolusinya dijaga lebih besar (maxSize 1400px) supaya tetap tajam saat dicetak ke PDF.
+        resizeImageToDataUrl(coverFile, 1400, dataUrl=>{
+          if(!dataUrl){ toast('Gagal membaca gambar cover'); return; }
+          DB.profil.coverDataUrl = dataUrl; save(); toast('Cover kustom disimpan'); renderContent();
+        });
+      } else { save(); toast('Pengaturan cover disimpan'); renderContent(); }
+    });
+    const btnHapusCoverUsaha = document.getElementById('btnHapusCoverUsaha');
+    if(btnHapusCoverUsaha) btnHapusCoverUsaha.addEventListener('click', ()=>{
+      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48};
+      DB.profil.coverDataUrl = ''; save(); toast('Cover kustom dihapus'); renderContent();
     });
 
     function bindViewOnlyToggle(wrap, viewClass, editClass, delClass){
@@ -19957,30 +20006,94 @@ RENDERERS.laporanlengkap = function(c){
   document.getElementById('llSecJurnal').addEventListener('change', e=>{ f.sections.jurnal = e.target.checked; });
   document.getElementById('llBtnGo').addEventListener('click', exportLaporanLengkapPdf);
 };
-// Halaman sampul (cover) — latar gelap, nama usaha, judul laporan, periode & tanggal cetak.
-function laporanLengkapDrawCover(doc, namaUsaha, logo, periodeText){
+// Halaman sampul (cover) — versi profesional: latar putih bersih, bingkai tipis emas dengan
+// aksen siku gelap di tiap sudut, logo & nama usaha, judul besar "FINANCIAL STATEMENT",
+// periode laporan, lalu alamat usaha di bagian bawah.
+function laporanLengkapDrawCover(doc, namaUsaha, logo, periodeText, alamat){
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setFillColor(20,20,20);
+  const GOLD = [196,155,74], DARK = [24,24,26];
+
+  // Latar putih
+  doc.setFillColor(255,255,255);
   doc.rect(0, 0, pageWidth, pageHeight, 'F');
-  let y = pageHeight/2 - 70;
+
+  // Bingkai tipis emas di dalam halaman
+  const m = 22;
+  doc.setDrawColor(GOLD[0],GOLD[1],GOLD[2]); doc.setLineWidth(1.1);
+  doc.rect(m, m, pageWidth-2*m, pageHeight-2*m);
+
+  // Aksen siku gelap di tiap sudut bingkai (lebih tebal dari garis bingkai)
+  const cl = 28;
+  doc.setDrawColor(DARK[0],DARK[1],DARK[2]); doc.setLineWidth(2.2);
+  [[m,m,1,1],[pageWidth-m,m,-1,1],[m,pageHeight-m,1,-1],[pageWidth-m,pageHeight-m,-1,-1]].forEach(([x,y,sx,sy])=>{
+    doc.line(x, y, x+sx*cl, y);
+    doc.line(x, y, x, y+sy*cl);
+  });
+
+  // Logo & nama usaha
+  let y0 = pageHeight/2 - 150;
   if(logo){
-    try{ doc.addImage(logo, 'PNG', pageWidth/2-30, y-96, 60, 60); }catch(e){}
-  }
-  doc.setTextColor(230,225,218);
+    try{ doc.addImage(logo, 'PNG', pageWidth/2-26, y0, 52, 52); y0 += 52+18; }catch(e){ y0 += 18; }
+  } else { y0 += 18; }
+  doc.setTextColor(DARK[0],DARK[1],DARK[2]);
   doc.setFontSize(13); doc.setFont(undefined,'bold');
-  doc.text(namaUsaha, pageWidth/2, y-14, { align:'center' });
-  doc.setDrawColor(120,110,100);
-  doc.line(pageWidth/2-40, y-4, pageWidth/2+40, y-4);
-  doc.setTextColor(255,255,255);
-  doc.setFontSize(26); doc.setFont(undefined,'bold');
-  doc.text('Laporan Keuangan', pageWidth/2, y+30, { align:'center' });
-  doc.text('Lengkap', pageWidth/2, y+62, { align:'center' });
-  doc.setFontSize(11); doc.setFont(undefined,'normal'); doc.setTextColor(210,200,190);
-  doc.text(periodeText, pageWidth/2, y+98, { align:'center' });
-  doc.setFontSize(9); doc.setTextColor(150,140,130);
-  doc.text('Dicetak: '+new Date().toLocaleString('id-ID'), pageWidth/2, pageHeight-40, { align:'center' });
-  doc.setTextColor(0,0,0);
+  doc.text(namaUsaha, pageWidth/2, y0, { align:'center' });
+  doc.setDrawColor(GOLD[0],GOLD[1],GOLD[2]); doc.setLineWidth(1);
+  doc.line(pageWidth/2-36, y0+12, pageWidth/2+36, y0+12);
+
+  // Judul besar, diapit garis tipis emas
+  let y = pageHeight/2 + 10;
+  doc.setLineWidth(1.2);
+  doc.line(pageWidth/2-56, y-46, pageWidth/2+56, y-46);
+  doc.setTextColor(DARK[0],DARK[1],DARK[2]);
+  doc.setFontSize(32); doc.setFont(undefined,'bold');
+  doc.text('FINANCIAL', pageWidth/2, y, { align:'center' });
+  doc.text('STATEMENT', pageWidth/2, y+38, { align:'center' });
+  doc.line(pageWidth/2-56, y+60, pageWidth/2+56, y+60);
+
+  // Periode laporan
+  doc.setFontSize(11); doc.setFont(undefined,'normal'); doc.setTextColor(120,110,95);
+  doc.text(periodeText, pageWidth/2, y+84, { align:'center' });
+
+  // Alamat usaha (dibungkus otomatis ke beberapa baris kalau panjang)
+  if(alamat){
+    doc.setFontSize(8.5); doc.setTextColor(130,125,120);
+    const lines = doc.splitTextToSize(alamat, pageWidth-2*m-60);
+    let ay = y+102;
+    lines.forEach(line=>{ doc.text(line, pageWidth/2, ay, { align:'center' }); ay += 11; });
+  }
+
+  doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0);
+}
+// Halaman sampul (cover) versi KUSTOM — dipakai kalau user sudah upload gambar cover sendiri
+// di Pengaturan (mis. desain "FINANCIAL STATEMENT" ala Kamil Group). Gambar dipasang memenuhi
+// 1 halaman penuh (mode "cover": rasio aspek dijaga, kelebihan tepi dipotong otomatis via
+// pdfAddImageCover). Lalu, kalau diisi, judul tambahan (mis. "GIRO PRK") ditempel dulu (bold,
+// ukuran lebih besar, tapi masih di bawah judul cover seperti "FINANCIAL STATEMENT"), baru di
+// bawahnya teks periode laporan (mis. "Periode Agustus") — keduanya rata tengah horizontal, di
+// posisi vertikal yang bisa diatur (persentase dari atas halaman) sesuai konfigurasi user.
+function laporanLengkapDrawCoverImage(doc, coverDataUrl, periodeText, periodeYPercent, colorMode, coverJudul, coverJudulYPercent){
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  pdfAddImageCover(doc, coverDataUrl, 0, 0, pageWidth, pageHeight);
+
+  if(colorMode==='light'){ doc.setTextColor(255,255,255); } else { doc.setTextColor(40,40,40); }
+
+  if(coverJudul){
+    const judulYPct = (typeof coverJudulYPercent==='number' && !isNaN(coverJudulYPercent)) ? coverJudulYPercent : 48;
+    const judulY = pageHeight * (Math.max(0, Math.min(100, judulYPct)) / 100);
+    doc.setFontSize(20); doc.setFont(undefined,'bold');
+    doc.text(coverJudul, pageWidth/2, judulY, { align:'center' });
+  }
+
+  const yPct = (typeof periodeYPercent==='number' && !isNaN(periodeYPercent)) ? periodeYPercent : 58;
+  const y = pageHeight * (Math.max(0, Math.min(100, yPct)) / 100);
+  doc.setFontSize(15); doc.setFont(undefined,'bold');
+  doc.text(periodeText, pageWidth/2, y, { align:'center' });
+
+  doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0); doc.setFont(undefined,'normal');
 }
 // Buku Besar semua akun, digambar langsung ke `doc` yang sudah ada (dipakai khusus di Laporan
 // Lengkap) — logikanya sama dengan exportAllBukuBesarPdf mode 'single', tapi tanpa membuat
@@ -20041,6 +20154,7 @@ function exportLaporanLengkapPdf(){
     const pageHeight = doc.internal.pageSize.getHeight();
     const namaUsaha = (DB.profil && DB.profil.namaUsaha) || 'Inspira Ledger';
     const logo = DB.profil && DB.profil.logoDataUrl;
+    const alamatUsaha = (DB.profil && DB.profil.alamat) || '';
 
     const neracaTgl = f.neracaTanggal || todayStr();
     let dari, sampai, periodeText;
@@ -20054,8 +20168,26 @@ function exportLaporanLengkapPdf(){
       periodeText = 'Periode: '+fmtTgl(dari)+' s/d '+fmtTgl(sampai);
     }
 
+    // Teks periode khusus untuk halaman sampul (cover): bukan rentang tanggal lengkap,
+    // tapi cukup nama bulannya saja (mis. "Periode Agustus"), diambil dari tanggal "dari".
+    // Kalau mode "Semua" (tanpa tanggal), tetap pakai teks periode biasa sebagai fallback.
+    const NAMA_BULAN_COVER = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    let periodeTextCover = periodeText;
+    if(dari){
+      const bulanIdx = parseInt(String(dari).slice(5,7), 10) - 1;
+      if(bulanIdx>=0 && bulanIdx<12) periodeTextCover = 'Periode '+NAMA_BULAN_COVER[bulanIdx];
+    }
+
     // ---- Halaman 1: Cover ----
-    laporanLengkapDrawCover(doc, namaUsaha, logo, periodeText);
+    // Kalau user sudah upload cover kustom di Pengaturan, pakai itu (gambar 1 halaman penuh +
+    // judul tambahan opsional + teks periode ditempel di posisi yang diatur). Kalau belum,
+    // pakai cover bawaan (digambar).
+    const coverCustom = DB.profil && DB.profil.coverDataUrl;
+    if(coverCustom){
+      laporanLengkapDrawCoverImage(doc, coverCustom, periodeTextCover, DB.profil.coverPeriodeY, DB.profil.coverPeriodeColor, DB.profil.coverJudul, DB.profil.coverJudulY);
+    } else {
+      laporanLengkapDrawCover(doc, namaUsaha, logo, periodeText, alamatUsaha);
+    }
 
     // ---- Halaman 2: Daftar Isi (kontennya diisi belakangan, setelah tahu nomor halaman tiap bagian) ----
     doc.addPage();
@@ -20089,9 +20221,9 @@ function exportLaporanLengkapPdf(){
       sections.push({ label:'Jurnal Umum', sub:periodeText, startPage });
     }
 
-    // ---- Nomor halaman di SEMUA halaman (termasuk cover & daftar isi) ----
+    // ---- Nomor halaman di semua halaman kecuali cover (halaman 1) ----
     const totalPages = doc.internal.getNumberOfPages();
-    for(let p=1; p<=totalPages; p++){
+    for(let p=2; p<=totalPages; p++){
       doc.setPage(p);
       doc.setFontSize(8); doc.setFont(undefined,'normal'); doc.setTextColor(130,120,110);
       doc.text('Halaman '+p+' dari '+totalPages, pageWidth/2, pageHeight-18, { align:'center' });
