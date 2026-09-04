@@ -17235,24 +17235,38 @@ function renderLabaRugiRingkasan(c){
   // persen suatu Beban dari Pendapatan periode yang sama, tanpa perlu hitung manual.
   const totalPDBasis = sumByKategoriKepemilikanFiltered('PD', null, jlist);
   html += `<div class="card" style="margin-bottom:14px">`;
-  ['PD','BPP','BO','PL','BL'].forEach(kat=>{
+  // Susunan akun Laba Rugi: tiap kategori diikuti baris "Total <kategori>"-nya sendiri, lalu
+  // subtotal berjenjang (Laba Kotor setelah BPP, Laba Operasional setelah BO, Laba Rugi setelah
+  // BL) disisipkan di antara kategori — bukan cuma satu baris total di paling bawah — supaya
+  // urutannya mengikuti format laporan laba rugi standar: Pendapatan, Total Pendapatan, Beban
+  // Pokok Penjualan, Total Beban Pokok Penjualan, Laba Kotor, Beban Operasional, Total Beban
+  // Operasional, Laba Operasional, Pendapatan Lain, Total Pendapatan Lain, Beban Lain, Total
+  // Beban Lain, Laba Rugi.
+  const totalLineHtml = (label, val)=> `<div style="display:flex;justify-content:space-between;padding-top:6px;margin-top:6px;border-top:1px solid var(--line);font-family:Poppins;font-weight:700;font-size:13.5px"><span>${label}</span><span>${fmtRp(val)}${fmtPct(val,totalPDBasis)}</span></div>`;
+  const labaLineHtml = (label, val)=> `<div style="border-top:2px solid var(--ink);padding-top:10px;margin-bottom:14px;display:flex;justify-content:space-between;font-family:Poppins;font-weight:700;font-size:15px"><span>${label}</span><span style="color:${val>=0?'var(--debit)':'var(--kredit)'}">${fmtRp(val)}${fmtPct(val,totalPDBasis)}</span></div>`;
+  const kategoriBlockHtml = kat=>{
     const akunsKat = DB.coa.filter(a=>a.kategori===kat);
     const subtotal = sumByKategoriKepemilikanFiltered(kat, null, jlist);
-    html += `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:var(--terracotta-dark);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:6px"><span>${KAT[kat]}</span><span>${fmtRp(subtotal)}${fmtPct(subtotal,totalPDBasis)}</span></div>`;
+    let h = `<div style="margin-bottom:2px"><div style="font-weight:700;font-size:13px;color:var(--terracotta-dark);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:6px">${KAT[kat]}</div>`;
     // Rincian akun ditampilkan flat (tidak dikelompokkan per kepemilikan lagi) — semua akun
     // kategori ini strata-nya sama, supaya tidak ada akun yang hilang dari rincian gara-gara
     // field kepemilikan-nya tidak cocok dengan salah satu grup.
     const getSaldoPeriode = a=> sumByKategoriKepemilikanFiltered(kat, null, jlist.filter(j=>j.debitId===a.id||j.kreditId===a.id));
     const listNonzero = akunsKat.filter(a=> !a.isHeader && getSaldoPeriode(a)!==0);
-    html += renderAkunGroupHtml(listNonzero, getSaldoPeriode, lrCollapse, totalPDBasis);
-    html += `</div>`;
-  });
-  const totalPD = sumByKategoriKepemilikanFiltered('PD', null, jlist);
-  const totalBPP = sumByKategoriKepemilikanFiltered('BPP', null, jlist);
-  const totalBO = sumByKategoriKepemilikanFiltered('BO', null, jlist);
-  const totalBL = sumByKategoriKepemilikanFiltered('BL', null, jlist);
-  const net = totalPD-totalBPP-totalBO-totalBL;
-  html += `<div style="border-top:2px solid var(--ink);padding-top:10px;display:flex;justify-content:space-between;font-family:Poppins;font-weight:700;font-size:15px"><span>Laba/Rugi Bersih</span><span style="color:${net>=0?'var(--debit)':'var(--kredit)'}">${fmtRp(net)}${fmtPct(net,totalPDBasis)}</span></div>`;
+    h += renderAkunGroupHtml(listNonzero, getSaldoPeriode, lrCollapse, totalPDBasis);
+    h += totalLineHtml('Total '+KAT[kat], subtotal);
+    h += `</div>`;
+    return h;
+  };
+  html += kategoriBlockHtml('PD');
+  html += kategoriBlockHtml('BPP');
+  html += labaLineHtml('Laba Kotor', labaKotor);
+  html += kategoriBlockHtml('BO');
+  html += labaLineHtml('Laba Operasional', labaOperasional);
+  html += kategoriBlockHtml('PL');
+  html += kategoriBlockHtml('BL');
+  const net = lr; // Laba Rugi = Laba Operasional + Pendapatan Lain − Beban Lain
+  html += labaLineHtml('Laba Rugi', net);
 
   // ---- Pendapatan Komprehensif & Beban Komprehensif ----
   // Posisinya sengaja DI BAWAH Laba Rugi (bukan bagian dari PD/BPP/BO/BL di atas), supaya tidak
@@ -17275,7 +17289,7 @@ function renderLabaRugiRingkasan(c){
   const totalBK = sumByKategoriKepemilikanFiltered('BK', null, jlist);
   const netKomprehensif = net + totalPK - totalBK;
   html += `<div style="border-top:2px solid var(--ink);padding-top:10px;display:flex;justify-content:space-between;font-family:Poppins;font-weight:700;font-size:15px"><span>Laba Rugi Komprehensif</span><span style="color:${netKomprehensif>=0?'var(--debit)':'var(--kredit)'}">${fmtRp(netKomprehensif)}${fmtPct(netKomprehensif,totalPDBasis)}</span></div>`;
-  html += `<div class="mini" style="margin-top:6px">Laba/Rugi Bersih + Pendapatan Komprehensif − Beban Komprehensif. Tidak mempengaruhi Laba/Rugi Bersih di atas.</div>`;
+  html += `<div class="mini" style="margin-top:6px">Laba Rugi + Pendapatan Komprehensif − Beban Komprehensif. Tidak mempengaruhi Laba Rugi di atas.</div>`;
   html += `</div>`;
   html += `</div>`;
 
