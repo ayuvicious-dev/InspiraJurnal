@@ -5296,6 +5296,7 @@ function renderCoaAkunTab(c){
       ${viewOnly?'':`<button class="btn small danger" id="btnDelSelectedAkun" style="display:none">🗑️ Hapus Terpilih (<span id="coaSelectedCount">0</span>)</button>`}
       ${viewOnly?'':'<button class="btn primary" id="btnAddAkun">+ Tambah Akun</button>'}
       ${viewOnly?'':ioToolbarHtml('coa', coaIoCfg())}
+      ${viewOnly?'':`<button class="btn small" id="btnBackupCoaJson" type="button" title="Simpan seluruh Chart of Accounts (daftar akun, header/sub-akun) ke satu file JSON di HP/laptop ini">⬇ Backup JSON</button><button class="btn small" id="btnRestoreCoaJson" type="button" title="Pulihkan Chart of Accounts dari file JSON hasil Backup">⬆ Restore JSON</button><input type="file" id="fileRestoreCoaJson" accept="application/json" class="hidden">`}
     </div>
   </div>
   <div id="coaTableWrap"></div>`;
@@ -5303,6 +5304,7 @@ function renderCoaAkunTab(c){
   coaSelectedIds.clear();
   renderCoaTable();
   if(!viewOnly) bindIoToolbar('coa', coaIoCfg());
+  if(!viewOnly) bindCoaBackupRestore(c);
 
   document.getElementById('coaFilter').addEventListener('change', e=>{ coaFilterKategori = e.target.value; renderCoaTable(); });
   document.getElementById('coaSearchInput').addEventListener('input', e=>{ coaSearch = e.target.value; renderCoaTable(); });
@@ -5312,6 +5314,94 @@ function renderCoaAkunTab(c){
   if(btnDelSelectedAkun) btnDelSelectedAkun.addEventListener('click', hapusAkunTerpilih);
 
 };
+/* ---- Backup & Restore JSON khusus Chart of Accounts (COA) saja ----
+   Beda dari "Backup JSON" di menu Admin (yang men-dump SELURUH data aplikasi), fitur ini HANYA
+   mencadangkan/mengembalikan DB.coa (daftar akun beserta kode, kategori, kepemilikan, keterangan,
+   dan relasi Header/Sub-akun) — tidak menyentuh Jurnal atau data lain. Berguna sebagai cadangan
+   cepat sebelum impor massal, bereksperimen menyusun ulang struktur akun, atau untuk memindahkan
+   struktur COA yang sama ke akun/perangkat lain. */
+function bindCoaBackupRestore(c){
+  const btnBackup = document.getElementById('btnBackupCoaJson');
+  if(btnBackup) btnBackup.addEventListener('click', ()=>{
+    if(!DB.coa || DB.coa.length===0) return toast('Belum ada akun untuk di-backup');
+    const payload = { jenis:'inspira-ledger-coa-backup', versi:1, dibuatPada:new Date().toISOString(), coa: DB.coa };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'inspira-ledger-coa-backup-'+todayStr()+'.json';
+    a.click(); URL.revokeObjectURL(url);
+    toast('Backup '+DB.coa.length+' akun COA berhasil diunduh');
+  });
+  const btnRestore = document.getElementById('btnRestoreCoaJson');
+  const fileInp = document.getElementById('fileRestoreCoaJson');
+  if(btnRestore && fileInp){
+    btnRestore.addEventListener('click', ()=> fileInp.click());
+    fileInp.addEventListener('change', e=>{
+      const file = e.target.files[0]; fileInp.value=''; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ev=>{
+        let incoming;
+        try{
+          const data = JSON.parse(ev.target.result);
+          // Terima dua format: hasil Backup JSON fitur ini ({coa:[...]}), atau array akun polos
+          // (misal hasil edit manual/backup lama) — supaya tetap fleksibel dipulihkan.
+          incoming = Array.isArray(data) ? data : Array.isArray(data.coa) ? data.coa : null;
+          if(!incoming) throw new Error('format tidak dikenali (bukan file backup Chart of Accounts)');
+          incoming.forEach(a=>{ if(typeof a.nama!=='string' || !a.nama.trim() || typeof a.kategori!=='string') throw new Error('format tidak dikenali (item tanpa nama/kategori akun)'); });
+        }catch(err){ toast('File tidak valid: '+err.message); return; }
+        openCoaRestoreConfirmModal(incoming);
+      };
+      reader.readAsText(file);
+    });
+  }
+}
+/* Modal konfirmasi restore COA — memberi pilihan "Gabung" (aman, tidak menimpa akun yang sudah
+   ada, hanya menambah akun baru dan menyambung relasi Header/Sub-akunnya) atau "Timpa Semua"
+   (mengganti seluruh daftar akun saat ini dengan isi backup, termasuk id aslinya supaya Jurnal
+   yang mengacu ke akun-akun tersebut — kalau dipulihkan dari sumber/waktu yang sama — tetap
+   nyambung), supaya restore tidak diam-diam menghapus akun baru yang sudah ditambahkan sejak
+   backup dibuat. */
+function openCoaRestoreConfirmModal(incoming){
+  const existingNames = new Set(DB.coa.map(x=> x.nama.trim().toLowerCase()));
+  const baru = incoming.filter(a=> !existingNames.has((a.nama||'').trim().toLowerCase()));
+  const duplikat = incoming.length - baru.length;
+  const m = openFormModal('Restore Chart of Accounts dari Backup', `
+    <div class="mini" style="margin-bottom:12px">File backup berisi <b>${incoming.length}</b> akun${duplikat>0?' ('+baru.length+' baru, '+duplikat+' nama sudah ada di daftar akun saat ini)':''}. Pilih cara restore:</div>
+    <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+      <button class="btn primary" id="coaRestoreGabung" type="button" style="white-space:normal;text-align:left;line-height:1.35;height:auto;width:100%;padding:10px 12px">➕ <b>Gabung</b> — tambahkan ${baru.length} akun baru saja (akun yang sudah ada TIDAK diubah/ditimpa)</button>
+      <button class="btn danger" id="coaRestoreTimpa" type="button" style="white-space:normal;text-align:left;line-height:1.35;height:auto;width:100%;padding:10px 12px">⚠️ <b>Timpa Semua</b> — ganti SELURUH daftar akun saat ini (${DB.coa.length} akun) dengan isi backup (${incoming.length} akun)</button>
+      <button class="btn" id="coaRestoreBatal" type="button" style="width:100%">Batal</button>
+    </div>`, 'coaRestoreModal');
+  m.querySelector('#coaRestoreGabung').addEventListener('click', ()=>{
+    if(baru.length===0){ toast('Tidak ada akun baru untuk ditambahkan — semua nama di backup sudah ada'); return; }
+    // Peta id lama (di file backup) -> id akun yang dipakai sekarang, supaya relasi Header/Sub-akun
+    // (parentHeaderId) antar akun yang baru ditambahkan — termasuk yang nempel ke header yang
+    // kebetulan sudah ada duluan di daftar saat ini — tetap tersambung dengan benar.
+    const idMap = {};
+    incoming.forEach(a=>{
+      const existing = DB.coa.find(x=> x.nama.trim().toLowerCase()===(a.nama||'').trim().toLowerCase());
+      if(existing) idMap[a.id] = existing.id;
+    });
+    baru.forEach(a=>{ idMap[a.id] = uid(); });
+    baru.forEach(a=>{
+      DB.coa.push({
+        id: idMap[a.id], kode: a.kode||'', kategori: a.kategori, nama: a.nama,
+        kepemilikan: a.kepemilikan||'Pribadi', keterangan: a.keterangan||'',
+        isHeader: !!a.isHeader,
+        parentHeaderId: a.parentHeaderId ? (idMap[a.parentHeaderId]||undefined) : undefined
+      });
+    });
+    save(); m.remove(); renderContent();
+    toast(baru.length+' akun baru berhasil ditambahkan dari backup');
+  });
+  m.querySelector('#coaRestoreTimpa').addEventListener('click', ()=>{
+    if(!confirm('Yakin? Ini akan MENGHAPUS seluruh '+DB.coa.length+' akun yang ada sekarang dan menggantinya dengan '+incoming.length+' akun dari file backup. Jurnal yang sudah tercatat tidak ikut terhapus, tapi bisa jadi tidak lagi cocok dengan akun kalau backup ini berasal dari sumber/waktu yang berbeda. Tindakan ini tidak bisa dibatalkan.')) return;
+    DB.coa = JSON.parse(JSON.stringify(incoming)).map(a=> Object.assign(a, { id: a.id || uid() }));
+    save(); m.remove(); renderContent();
+    toast('Seluruh daftar akun berhasil ditimpa dari backup ('+DB.coa.length+' akun)');
+  });
+  m.querySelector('#coaRestoreBatal').addEventListener('click', ()=> m.remove());
+}
 
 /* Referensi statis skema kode klasifikasi mutasi rekening Bank BCA Pak Mahen (dipakai saat
    rekonsiliasi CSV rekening → jurnal). Kode ini muncul di kolom "Kode" pada file CSV mutasi
