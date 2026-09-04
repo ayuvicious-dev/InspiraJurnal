@@ -19977,6 +19977,244 @@ function finishInit(){
 
 /* ================= LAPORAN LENGKAP (gabungan: cover, daftar isi, Neraca, Laba Rugi,
    Buku Besar, Jurnal Umum — satu file PDF dengan nomor halaman berurutan di semua halaman) ================= */
+/* ================= IMPOR BUKU BESAR GABUNGAN (MULTI AKUN) — di fitur Laporan Lengkap =================
+   Fitur ini membaca file Excel "Buku Besar" GABUNGAN (satu sheet berisi SEMUA akun sekaligus,
+   dikelompokkan per akun lewat baris judul "(kode) Nama Akun" lalu daftar mutasinya di bawah —
+   format umum hasil ekspor software akuntansi lain, mis. Jurnal/Mekari), lalu mengubahnya jadi
+   entri Jurnal di aplikasi ini. Karena Neraca, Laba Rugi, Arus Kas & Perubahan Modal SEMUANYA
+   dihitung langsung dari DB.jurnal (lihat saldoAkun/labaRugiPerKepemilikan dst.), begitu jurnal
+   hasil impor masuk, keempat laporan itu otomatis ikut berubah tanpa perlu langkah tambahan.
+
+   Setiap baris pada file sumber hanya berisi SATU sisi (Debit atau Kredit) dari satu akun — sisi
+   lawannya ada di baris lain, di akun lain. Untuk merekonstruksi pasangan Debit/Kredit yang
+   sesungguhnya, baris-baris dikelompokkan berdasarkan (Tanggal + Jenis Transaksi + Nomor) — satu
+   dokumen sumber yang sama berbagi ketiga nilai ini di semua akun yang tersentuh olehnya (termasuk
+   kalau satu dokumen menyentuh lebih dari 2 akun / entri majemuk). Dalam satu kelompok, baris Debit
+   dipasangkan dengan baris Kredit lewat algoritma greedy supaya nominalnya balance; sisa yang tidak
+   terpasangkan (mis. akun lawannya tidak ikut ter-export) diposting ke akun penampung "Selisih Impor
+   Buku Besar" supaya Neraca tetap balance dan tidak ada nominal yang hilang diam-diam. */
+
+// Cari baris header ("Nama Akun / Tanggal, Transaksi, Nomor, Keterangan, Debit, Kredit, Saldo, Tags")
+// di antara baris-baris judul (nama usaha/periode) di awal file. Return -1 kalau tidak ditemukan.
+function detectBukuBesarGabunganHeaderRow(aoa){
+  for(let r=0; r<Math.min(aoa.length,30); r++){
+    const row = aoa[r]||[];
+    const c0 = String(row[0]??'').trim().toLowerCase();
+    const c1 = String(row[1]??'').trim().toLowerCase();
+    if(c0==='nama akun / tanggal' && c1==='transaksi') return r;
+  }
+  return -1;
+}
+// Baca 1 file .xlsx/.xls format Buku Besar gabungan -> cb({accounts:[{kodeAsli,nama,rows:[...]}]}, err)
+function bacaBukuBesarGabunganFile(file, cb){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      const headerRow = detectBukuBesarGabunganHeaderRow(aoa);
+      if(headerRow<0) return cb(null, new Error('Format tidak dikenali: baris header "Nama Akun / Tanggal, Transaksi, Nomor, Keterangan, Debit, Kredit, Saldo, Tags" tidak ditemukan pada 30 baris pertama.'));
+      const accounts = [];
+      let cur = null;
+      for(let r=headerRow+1; r<aoa.length; r++){
+        const row = aoa[r]||[];
+        const c0 = String(row[0]??'').trim();
+        const sisaKolomKosong = [1,2,3,4,5,6,7].every(i=> row[i]===undefined || row[i]===null || String(row[i]).trim()==='');
+        if(!c0 && sisaKolomKosong) continue; // baris kosong pemisah
+        if(c0 && sisaKolomKosong){
+          // baris judul akun, mis. "(1-10001) Bank BCA Operasional" atau cuma "Bank BCA Operasional"
+          const m = c0.match(/^\(([^)]+)\)\s*(.+)$/);
+          cur = { kodeAsli: m ? m[1].trim() : '', nama: (m ? m[2] : c0).trim(), rows: [] };
+          accounts.push(cur);
+          continue;
+        }
+        if(!cur) continue; // baris mutasi sebelum ada judul akun terdeteksi -> lewati (data cacat)
+        const tanggal = parseTglInput(String(c0||'').trim());
+        const debit = Number(row[4])||0, kredit = Number(row[5])||0;
+        if(!tanggal || (debit<=0 && kredit<=0)) continue; // baris "Saldo Akhir"/ringkasan dsb -> lewati
+        cur.rows.push({
+          tanggal, transaksi:String(row[1]??'').trim(), nomor:String(row[2]??'').trim(),
+          keterangan:String(row[3]??'').trim(), debit, kredit, tags:String(row[7]??'').trim()
+        });
+      }
+      cb({accounts}, null);
+    }catch(err){ cb(null, err); }
+  };
+  reader.onerror = ()=> cb(null, new Error('Gagal membaca file'));
+  reader.readAsArrayBuffer(file);
+}
+// Tebak kategori COA (AL/PIU/KW/MD/PD/BO/dst.) dari kode akun asal (prefix angka sebelum "-") &
+// kata kunci pada namanya, supaya akun yang belum ada di Chart of Accounts bisa dibuat otomatis
+// dengan kategori yang masuk akal (dampaknya ke Neraca vs Laba Rugi jadi benar).
+function inferKategoriBukuBesarGabungan(kodeAsli, nama){
+  const n = (nama||'').toLowerCase();
+  const prefix = String(kodeAsli||'').split('-')[0].trim();
+  const tebakDariNama = ()=>{
+    if(n.includes('akumulasi penyusutan')) return 'KAT';
+    if(n.includes('piutang')) return 'PIU';
+    if(n.includes('aset tetap')) return 'AT';
+    if(n.includes('investasi')) return 'ALN';
+    if(n.includes('bank')||n.includes('kas')) return 'AL';
+    if(n.includes('hutang')||n.includes('utang')) return 'KW';
+    if(n.includes('modal')||n.includes('ekuitas')) return 'MD';
+    if(n.includes('pendapatan')) return 'PD';
+    if(n.includes('beban')||n.includes('biaya')) return 'BO';
+    return 'ALL';
+  };
+  switch(prefix){
+    case '1':
+      if(n.includes('akumulasi penyusutan')) return 'KAT';
+      if(n.includes('piutang')) return 'PIU';
+      if(n.includes('aset tetap')) return 'AT';
+      if(n.includes('investasi')) return 'ALN';
+      if(n.includes('bank')||n.includes('kas')) return 'AL';
+      return 'ALL';
+    case '2': return 'KW';
+    case '3': return 'MD';
+    case '4': return 'PD';
+    case '6': return 'BO';
+    case '7': return 'PL';
+    case '8': return 'BL';
+    case '9': return 'BL';
+    default: return tebakDariNama();
+  }
+}
+// Cocokkan akun dari file ke akun yang sudah ada di Chart of Accounts (berdasarkan nama, tanpa
+// peduli besar/kecil huruf & spasi di ujung); kalau belum ada, buat otomatis lewat addAkun().
+function resolveAkunImporBukuBesar(kodeAsli, nama, stat){
+  const namaTrim = (nama||'').trim();
+  let akun = DB.coa.find(a=> a.nama.trim().toLowerCase()===namaTrim.toLowerCase());
+  if(akun){ stat.matched++; return akun; }
+  const kategori = inferKategoriBukuBesarGabungan(kodeAsli, namaTrim);
+  akun = addAkun(kategori, namaTrim, 'Pribadi', 'Dibuat otomatis dari Impor Buku Besar'+(kodeAsli?(' (kode asal: '+kodeAsli+')'):''));
+  stat.created++;
+  return akun;
+}
+// Akun penampung ("suspense") untuk sisi Debit/Kredit yang tidak berhasil dipasangkan saat impor
+// (mis. akun lawannya tidak ikut ter-export dalam file) — supaya Neraca tetap balance & tidak ada
+// nominal yang hilang diam-diam. Dibuat sekali lalu dipakai ulang untuk impor-impor berikutnya.
+function akunSelisihImporBukuBesar(){
+  let akun = DB.coa.find(a=> a.kategori==='MD' && a.nama==='Selisih Impor Buku Besar');
+  if(!akun) akun = addAkun('MD','Selisih Impor Buku Besar','Pribadi','Akun penampung otomatis untuk sisi Debit/Kredit yang tidak terpasangkan saat fitur Impor Buku Besar di Laporan Lengkap dijalankan (mis. akun lawan tidak ikut ter-export dalam file sumber).');
+  return akun;
+}
+// Ringkasan cepat (dipakai di modal verifikasi sebelum diterapkan).
+function ringkasanBukuBesarGabungan(parsed){
+  return { totalAkun: parsed.accounts.length, totalBaris: parsed.accounts.reduce((s,a)=>s+a.rows.length,0) };
+}
+// Proses inti: cocokkan/​buat akun, pasangkan Debit/Kredit per dokumen (Tanggal+Transaksi+Nomor),
+// lalu posting sebagai Jurnal (postJurnal) — hasilnya otomatis terhitung ke Neraca, Laba Rugi,
+// Arus Kas & Perubahan Modal. Semua pasangan dari 1 dokumen sumber diberi ref yang sama, diawali
+// 'jurnal-manual-' supaya tampil digabung jadi 1 baris di Jurnal Umum (konsisten dengan entri
+// majemuk manual lain di aplikasi ini — lihat groupJurnalDisplayRows).
+function prosesImporBukuBesarGabungan(parsed){
+  const stat = { matched:0, created:0, entri:0, selisih:0, grup:0, dilewati:0 };
+  const flat = [];
+  parsed.accounts.forEach(sec=>{
+    const akun = resolveAkunImporBukuBesar(sec.kodeAsli, sec.nama, stat);
+    sec.rows.forEach(r=>{
+      const sisi = r.debit>0 ? 'debit' : 'kredit';
+      const nominal = r.debit>0 ? r.debit : r.kredit;
+      if(!r.tanggal || nominal<=0){ stat.dilewati++; return; }
+      flat.push({ akunId:akun.id, tanggal:r.tanggal, transaksi:r.transaksi, nomor:r.nomor, keterangan:r.keterangan, tags:r.tags, sisi, nominal });
+    });
+  });
+  const groups = {};
+  flat.forEach(x=>{ const key = x.tanggal+'|'+x.transaksi+'|'+x.nomor; (groups[key] = groups[key]||[]).push(x); });
+  const selisihAkun = akunSelisihImporBukuBesar();
+  Object.values(groups).forEach(items=>{
+    stat.grup++;
+    const debitLines = items.filter(x=>x.sisi==='debit').map(x=>({akunId:x.akunId, sisa:x.nominal, keterangan:x.keterangan, tags:x.tags}));
+    const kreditLines = items.filter(x=>x.sisi==='kredit').map(x=>({akunId:x.akunId, sisa:x.nominal, keterangan:x.keterangan, tags:x.tags}));
+    const tanggal = items[0].tanggal;
+    const ref = 'jurnal-manual-bbimpor-'+uid();
+    const keteranganDefault = (items.find(x=>x.keterangan)||{}).keterangan || items[0].transaksi || 'Impor Buku Besar';
+    let i=0, j=0;
+    while(i<debitLines.length && j<kreditLines.length){
+      const d = debitLines[i], k = kreditLines[j];
+      const amt = Math.min(d.sisa, k.sisa);
+      if(amt>0){
+        const tags = parseTagInput(d.tags||k.tags||''); tags.forEach(ensureTag);
+        postJurnal({ tanggal, keterangan: d.keterangan||k.keterangan||keteranganDefault, debitId:d.akunId, kreditId:k.akunId, nominal:amt, sumber:'Impor Buku Besar', ref, tags });
+        stat.entri++;
+      }
+      d.sisa -= amt; k.sisa -= amt;
+      if(d.sisa<=0) i++;
+      if(k.sisa<=0) j++;
+    }
+    for(; i<debitLines.length; i++){
+      const d = debitLines[i]; if(d.sisa<=0) continue;
+      const tags = parseTagInput(d.tags||''); tags.forEach(ensureTag);
+      postJurnal({ tanggal, keterangan:(d.keterangan||keteranganDefault)+' (akun lawan tidak ditemukan di file)', debitId:d.akunId, kreditId:selisihAkun.id, nominal:d.sisa, sumber:'Impor Buku Besar', ref, tags });
+      stat.entri++; stat.selisih += d.sisa;
+    }
+    for(; j<kreditLines.length; j++){
+      const k = kreditLines[j]; if(k.sisa<=0) continue;
+      const tags = parseTagInput(k.tags||''); tags.forEach(ensureTag);
+      postJurnal({ tanggal, keterangan:(k.keterangan||keteranganDefault)+' (akun lawan tidak ditemukan di file)', debitId:selisihAkun.id, kreditId:k.akunId, nominal:k.sisa, sumber:'Impor Buku Besar', ref, tags });
+      stat.entri++; stat.selisih += k.sisa;
+    }
+  });
+  save(); renderContent();
+  return stat;
+}
+// Unduh contoh file template dengan format persis yang dibutuhkan fitur ini (2 akun contoh yang
+// saling berpasangan lewat Tanggal+Transaksi+Nomor yang sama), supaya user tinggal mengikuti pola.
+function downloadTemplateBukuBesarGabungan(){
+  const aoa = [
+    ['Nama Usaha Anda'],
+    ['Buku Besar'],
+    ['01/01/2025 - 31/12/2025'],
+    ['(dalam IDR)'],
+    [],
+    ['Nama Akun / Tanggal','Transaksi','Nomor','Keterangan','Debit','Kredit','Saldo','Tags'],
+    ['(1-10001) Bank BCA Operasional'],
+    ['01/01/2025','Bank Deposit','10001','Contoh setoran modal',5000000,0,5000000,'Contoh'],
+    ['(3-30002) Modal Contoh'],
+    ['01/01/2025','Bank Deposit','10001','Contoh setoran modal',0,5000000,5000000,'Contoh']
+  ];
+  exportAoaToExcel('template-buku-besar-gabungan.xlsx','Buku Besar', aoa);
+}
+// Modal verifikasi sebelum data hasil parsing benar-benar diposting jadi Jurnal.
+function openImportBukuBesarGabunganPreviewModal(parsed){
+  const id = 'llBbImportModal';
+  let m = document.getElementById(id); if(m) m.remove();
+  m = document.createElement('div');
+  m.id = id;
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(30,25,20,.55);z-index:96;display:flex;align-items:center;justify-content:center;padding:16px';
+  const ringkas = ringkasanBukuBesarGabungan(parsed);
+  const previewMax = 20;
+  const previewAkun = parsed.accounts.slice(0,previewMax).map(a=> `<tr><td class="wrap-cell">${escHtml(a.kodeAsli||'-')}</td><td class="wrap-cell">${escHtml(a.nama)}</td><td class="num">${a.rows.length}</td></tr>`).join('');
+  m.innerHTML = `<div style="background:var(--paper);color:var(--ink);width:min(720px,96vw);max-height:90vh;overflow:auto;border-radius:14px;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="font-size:16px">Verifikasi Impor Buku Besar</h3>
+      <button class="btn small" id="${id}Close">✕</button>
+    </div>
+    <div class="mini" style="margin-bottom:10px;line-height:1.6">Ditemukan <b>${ringkas.totalAkun}</b> akun dengan total <b>${ringkas.totalBaris}</b> baris mutasi. Akun yang namanya belum ada di Chart of Accounts akan <b>dibuat otomatis</b> (kategori ditebak dari kode/nama akun). Baris-baris dipasangkan jadi Jurnal berpasangan Debit/Kredit berdasarkan Tanggal + Jenis Transaksi + Nomor; sisi yang tidak terpasangkan diposting ke akun penampung <b>"Selisih Impor Buku Besar"</b> supaya Neraca tetap balance. Hasilnya otomatis terhitung ke <b>Neraca, Laba Rugi, Arus Kas,</b> dan <b>Perubahan Modal</b>.</div>
+    <div class="tablewrap" style="max-height:40vh;overflow:auto"><table class="sheet"><thead><tr><th>Kode Asal</th><th>Nama Akun</th><th>Jml Baris</th></tr></thead><tbody>
+    ${previewAkun || '<tr><td colspan="3" class="empty">Tidak ada data</td></tr>'}
+    </tbody></table></div>
+    ${parsed.accounts.length>previewMax ? `<div class="mini" style="margin-top:6px">...dan ${parsed.accounts.length-previewMax} akun lainnya (tetap ikut diproses saat diterapkan).</div>` : ''}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" id="${id}Cancel">Batal</button>
+      <button class="btn primary" id="${id}Apply">✔ Impor Sekarang</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  const close = ()=> m.remove();
+  m.addEventListener('click', e=>{ if(e.target===m) close(); });
+  document.getElementById(id+'Close').addEventListener('click', close);
+  document.getElementById(id+'Cancel').addEventListener('click', close);
+  document.getElementById(id+'Apply').addEventListener('click', ()=>{
+    close();
+    const stat = prosesImporBukuBesarGabungan(parsed);
+    toast('Impor Buku Besar selesai: '+stat.entri+' entri jurnal dari '+stat.grup+' dokumen'
+      +(stat.created?(', '+stat.created+' akun baru dibuat'):'')
+      +(stat.selisih?(', selisih '+fmtRp(stat.selisih)+' masuk akun penampung'):''));
+  });
+}
+
 let laporanLengkapFilter = {
   neracaTanggal: '',
   periodeMode: 'bulan_ini',
@@ -19988,7 +20226,16 @@ RENDERERS.laporanlengkap = function(c){
   const f = laporanLengkapFilter;
   const neracaTgl = f.neracaTanggal || todayStr();
   const showCustom = f.periodeMode==='custom';
-  c.innerHTML = `<div class="card">
+  c.innerHTML = `<div class="card" style="margin-bottom:14px">
+    <div class="section-title"><h3>Impor Buku Besar (Semua Akun)</h3></div>
+    <div class="mini" style="margin:-4px 0 10px;line-height:1.6">Unggah file Excel <b>Buku Besar gabungan</b> — satu sheet berisi semua akun, dikelompokkan lewat baris judul "(kode) Nama Akun" lalu daftar mutasinya di bawah (format umum ekspor software akuntansi lain). Data akan diubah jadi Jurnal di aplikasi ini, dan otomatis berdampak ke laporan <b>Neraca, Laba Rugi, Arus Kas,</b> dan <b>Perubahan Modal</b> di bawah — tanpa perlu input ulang manual.</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn small" id="llBbBtnTemplate" type="button">📄 Contoh Template</button>
+      <button class="btn small" id="llBbBtnImport" type="button">⬆ Impor Buku Besar</button>
+      <input type="file" id="llBbFileImport" accept=".xlsx,.xls" class="hidden">
+    </div>
+  </div>
+  <div class="card">
     <div class="section-title"><h3>Laporan Lengkap</h3></div>
     <div class="mini" style="margin:-4px 0 10px">Gabungkan beberapa laporan jadi <b>satu file PDF</b>: cover, daftar isi, Neraca, Laba Rugi, Buku Besar &amp; Jurnal Umum. Semua halaman diberi nomor halaman berurutan (mis. "Halaman 3 dari 12").</div>
     <div class="formgrid">
@@ -20017,6 +20264,19 @@ RENDERERS.laporanlengkap = function(c){
   document.getElementById('llSecBukuBesar').addEventListener('change', e=>{ f.sections.bukubesar = e.target.checked; });
   document.getElementById('llSecJurnal').addEventListener('change', e=>{ f.sections.jurnal = e.target.checked; });
   document.getElementById('llBtnGo').addEventListener('click', exportLaporanLengkapPdf);
+  document.getElementById('llBbBtnTemplate').addEventListener('click', downloadTemplateBukuBesarGabungan);
+  const llBbBtnImport = document.getElementById('llBbBtnImport');
+  const llBbFileImport = document.getElementById('llBbFileImport');
+  llBbBtnImport.addEventListener('click', ()=> llBbFileImport.click());
+  llBbFileImport.addEventListener('change', e=>{
+    const file = e.target.files[0]; if(!file) return;
+    bacaBukuBesarGabunganFile(file, (parsed, err)=>{
+      llBbFileImport.value='';
+      if(err) return toast('File tidak valid: '+err.message);
+      if(!parsed || parsed.accounts.length===0) return toast('Tidak ditemukan data akun pada file ini');
+      openImportBukuBesarGabunganPreviewModal(parsed);
+    });
+  });
 };
 // Halaman sampul (cover) — versi profesional: latar putih bersih, bingkai tipis emas dengan
 // aksen siku gelap di tiap sudut, logo & nama usaha, judul besar "FINANCIAL STATEMENT",
