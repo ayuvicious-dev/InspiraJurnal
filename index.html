@@ -20108,8 +20108,9 @@ function ringkasanBukuBesarGabungan(parsed){
 // Arus Kas & Perubahan Modal. Semua pasangan dari 1 dokumen sumber diberi ref yang sama, diawali
 // 'jurnal-manual-' supaya tampil digabung jadi 1 baris di Jurnal Umum (konsisten dengan entri
 // majemuk manual lain di aplikasi ini — lihat groupJurnalDisplayRows).
-function prosesImporBukuBesarGabungan(parsed){
+function prosesImporBukuBesarGabungan(parsed, namaFile){
   const stat = { matched:0, created:0, entri:0, selisih:0, grup:0, dilewati:0 };
+  const batchId = 'bbimpor-'+uid();
   const flat = [];
   parsed.accounts.forEach(sec=>{
     const akun = resolveAkunImporBukuBesar(sec.kodeAsli, sec.nama, stat);
@@ -20136,7 +20137,8 @@ function prosesImporBukuBesarGabungan(parsed){
       const amt = Math.min(d.sisa, k.sisa);
       if(amt>0){
         const tags = parseTagInput(d.tags||k.tags||''); tags.forEach(ensureTag);
-        postJurnal({ tanggal, keterangan: d.keterangan||k.keterangan||keteranganDefault, debitId:d.akunId, kreditId:k.akunId, nominal:amt, sumber:'Impor Buku Besar', ref, tags });
+        const entry = postJurnal({ tanggal, keterangan: d.keterangan||k.keterangan||keteranganDefault, debitId:d.akunId, kreditId:k.akunId, nominal:amt, sumber:'Impor Buku Besar', ref, tags });
+        if(entry) entry.importBatchId = batchId;
         stat.entri++;
       }
       d.sisa -= amt; k.sisa -= amt;
@@ -20146,18 +20148,46 @@ function prosesImporBukuBesarGabungan(parsed){
     for(; i<debitLines.length; i++){
       const d = debitLines[i]; if(d.sisa<=0) continue;
       const tags = parseTagInput(d.tags||''); tags.forEach(ensureTag);
-      postJurnal({ tanggal, keterangan:(d.keterangan||keteranganDefault)+' (akun lawan tidak ditemukan di file)', debitId:d.akunId, kreditId:selisihAkun.id, nominal:d.sisa, sumber:'Impor Buku Besar', ref, tags });
+      const entry = postJurnal({ tanggal, keterangan:(d.keterangan||keteranganDefault)+' (akun lawan tidak ditemukan di file)', debitId:d.akunId, kreditId:selisihAkun.id, nominal:d.sisa, sumber:'Impor Buku Besar', ref, tags });
+      if(entry) entry.importBatchId = batchId;
       stat.entri++; stat.selisih += d.sisa;
     }
     for(; j<kreditLines.length; j++){
       const k = kreditLines[j]; if(k.sisa<=0) continue;
       const tags = parseTagInput(k.tags||''); tags.forEach(ensureTag);
-      postJurnal({ tanggal, keterangan:(k.keterangan||keteranganDefault)+' (akun lawan tidak ditemukan di file)', debitId:selisihAkun.id, kreditId:k.akunId, nominal:k.sisa, sumber:'Impor Buku Besar', ref, tags });
+      const entry = postJurnal({ tanggal, keterangan:(k.keterangan||keteranganDefault)+' (akun lawan tidak ditemukan di file)', debitId:selisihAkun.id, kreditId:k.akunId, nominal:k.sisa, sumber:'Impor Buku Besar', ref, tags });
+      if(entry) entry.importBatchId = batchId;
       stat.entri++; stat.selisih += k.sisa;
     }
   });
+  DB.riwayatImporBukuBesar = DB.riwayatImporBukuBesar || [];
+  DB.riwayatImporBukuBesar.push({
+    id: uid(),
+    batchId,
+    waktu: new Date().toISOString(),
+    namaFile: namaFile || '',
+    totalAkun: parsed.accounts.length,
+    akunBaru: stat.created,
+    totalEntri: stat.entri,
+    totalDokumen: stat.grup,
+    selisih: stat.selisih
+  });
   save(); renderContent();
   return stat;
+}
+// Hapus 1 riwayat impor Buku Besar beserta SELURUH transaksi jurnal yang dihasilkan dari impor
+// tersebut (dikenali lewat field importBatchId yang sama, ditempel ke tiap entry saat diposting).
+function hapusRiwayatImporBukuBesar(historyId){
+  DB.riwayatImporBukuBesar = DB.riwayatImporBukuBesar || [];
+  const h = DB.riwayatImporBukuBesar.find(x=>x.id===historyId);
+  if(!h) return;
+  if(!confirm('Hapus riwayat impor ini? '+(h.totalEntri||0)+' entri jurnal yang dihasilkan dari impor ini (file: '+(h.namaFile||'-')+') akan ikut TERHAPUS SEMUA dari Jurnal Umum. Tindakan ini tidak bisa dibatalkan.')) return;
+  const toRemove = DB.jurnal.filter(j=>j.importBatchId===h.batchId);
+  toRemove.forEach(j=> catatRiwayat('hapus', j));
+  DB.jurnal = DB.jurnal.filter(j=>j.importBatchId!==h.batchId);
+  DB.riwayatImporBukuBesar = DB.riwayatImporBukuBesar.filter(x=>x.id!==historyId);
+  save(); renderContent();
+  toast('Riwayat impor dihapus, '+toRemove.length+' transaksi ikut dihapus');
 }
 // Unduh contoh file template dengan format persis yang dibutuhkan fitur ini (2 akun contoh yang
 // saling berpasangan lewat Tanggal+Transaksi+Nomor yang sama), supaya user tinggal mengikuti pola.
@@ -20177,7 +20207,7 @@ function downloadTemplateBukuBesarGabungan(){
   exportAoaToExcel('template-buku-besar-gabungan.xlsx','Buku Besar', aoa);
 }
 // Modal verifikasi sebelum data hasil parsing benar-benar diposting jadi Jurnal.
-function openImportBukuBesarGabunganPreviewModal(parsed){
+function openImportBukuBesarGabunganPreviewModal(parsed, namaFile){
   const id = 'llBbImportModal';
   let m = document.getElementById(id); if(m) m.remove();
   m = document.createElement('div');
@@ -20208,13 +20238,39 @@ function openImportBukuBesarGabunganPreviewModal(parsed){
   document.getElementById(id+'Cancel').addEventListener('click', close);
   document.getElementById(id+'Apply').addEventListener('click', ()=>{
     close();
-    const stat = prosesImporBukuBesarGabungan(parsed);
+    const stat = prosesImporBukuBesarGabungan(parsed, namaFile);
     toast('Impor Buku Besar selesai: '+stat.entri+' entri jurnal dari '+stat.grup+' dokumen'
       +(stat.created?(', '+stat.created+' akun baru dibuat'):'')
       +(stat.selisih?(', selisih '+fmtRp(stat.selisih)+' masuk akun penampung'):''));
   });
 }
 
+// Daftar riwayat impor Buku Besar (fitur "Impor Buku Besar (Semua Akun)" di halaman Laporan
+// Lengkap), lengkap dengan tombol hapus. Menghapus 1 riwayat akan ikut menghapus SEMUA transaksi
+// jurnal yang diposting dari impor tersebut (lihat hapusRiwayatImporBukuBesar, dikenali lewat
+// importBatchId yang sama).
+function laporanLengkapRiwayatImporHtml(){
+  DB.riwayatImporBukuBesar = DB.riwayatImporBukuBesar || [];
+  const list = DB.riwayatImporBukuBesar.slice().sort((a,b)=> (b.waktu||'').localeCompare(a.waktu||''));
+  if(!list.length) return '<div class="mini" style="margin-top:10px;opacity:.75">Belum ada riwayat impor.</div>';
+  const rows = list.map(h=>{
+    const waktu = h.waktu ? new Date(h.waktu).toLocaleString('id-ID', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
+    return `<tr>
+      <td class="wrap-cell">${waktu}</td>
+      <td class="wrap-cell">${escHtml(h.namaFile||'-')}</td>
+      <td class="num">${h.totalAkun||0}</td>
+      <td class="num">${h.totalEntri||0}</td>
+      <td><button class="btn small danger btnHapusRiwayatImporBB" data-id="${h.id}" type="button">🗑 Hapus</button></td>
+    </tr>`;
+  }).join('');
+  return `<div style="margin-top:14px">
+    <div class="mini" style="font-weight:700;margin-bottom:6px">Riwayat Impor Buku Besar</div>
+    <div class="mini" style="margin-bottom:8px;line-height:1.6">Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh transaksi jurnal</b> yang dihasilkan dari impor tersebut.</div>
+    <div class="tablewrap"><table class="sheet"><thead><tr><th>Waktu Impor</th><th>Nama File</th><th>Jml Akun</th><th>Jml Entri Jurnal</th><th></th></tr></thead><tbody>
+    ${rows}
+    </tbody></table></div>
+  </div>`;
+}
 let laporanLengkapFilter = {
   neracaTanggal: '',
   periodeMode: 'bulan_ini',
@@ -20234,6 +20290,7 @@ RENDERERS.laporanlengkap = function(c){
       <button class="btn small" id="llBbBtnImport" type="button">⬆ Impor Buku Besar</button>
       <input type="file" id="llBbFileImport" accept=".xlsx,.xls" class="hidden">
     </div>
+    ${laporanLengkapRiwayatImporHtml()}
   </div>
   <div class="card">
     <div class="section-title"><h3>Laporan Lengkap</h3></div>
@@ -20270,12 +20327,16 @@ RENDERERS.laporanlengkap = function(c){
   llBbBtnImport.addEventListener('click', ()=> llBbFileImport.click());
   llBbFileImport.addEventListener('change', e=>{
     const file = e.target.files[0]; if(!file) return;
+    const namaFile = file.name;
     bacaBukuBesarGabunganFile(file, (parsed, err)=>{
       llBbFileImport.value='';
       if(err) return toast('File tidak valid: '+err.message);
       if(!parsed || parsed.accounts.length===0) return toast('Tidak ditemukan data akun pada file ini');
-      openImportBukuBesarGabunganPreviewModal(parsed);
+      openImportBukuBesarGabunganPreviewModal(parsed, namaFile);
     });
+  });
+  document.querySelectorAll('.btnHapusRiwayatImporBB').forEach(btn=>{
+    btn.addEventListener('click', ()=> hapusRiwayatImporBukuBesar(btn.dataset.id));
   });
 };
 // Halaman sampul (cover) — versi profesional: latar putih bersih, bingkai tipis emas dengan
