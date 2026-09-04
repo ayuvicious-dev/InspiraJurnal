@@ -860,7 +860,7 @@ const KEPEMILIKAN = ['Pribadi'];
 const KAT = {
   AL:'Aset Lancar', PS:'Aset Persediaan', PIU:'Aset Piutang', ALL:'Aset Lancar Lainnya', AT:'Aset Tetap',
   ATB:'Aset Tidak Berwujud', KAT:'Kontra Aset Tetap', ALN:'Aset Lainnya', KW:'Kewajiban', MD:'Modal',
-  PD:'Pendapatan', BPP:'Beban Pokok Penjualan', BO:'Beban Operasional', BL:'Beban Lain',
+  PD:'Pendapatan', BPP:'Beban Pokok Penjualan', BO:'Beban Operasional', PL:'Pendapatan Lain', BL:'Beban Lain',
   PK:'Pendapatan Komprehensif', BK:'Beban Komprehensif'
 };
 /* Fixed display order for account categories, used everywhere a list of accounts is shown
@@ -869,10 +869,10 @@ const KAT = {
    posisinya "di bawah Laba Rugi" (mis. diskon transaksi, selisih harga emas/valas/saham): dampaknya
    dipisah dari Laba Rugi rill lewat baris "Laba Rugi Komprehensif" di Laporan Laba Rugi, supaya
    akumulasi keuntungan/kerugian semacam ini kelihatan tanpa mempengaruhi angka Laba/Rugi operasional. */
-const KATEGORI_ORDER = ['AL','PS','PIU','ALL','ALN','AT','ATB','KAT','KW','MD','PD','BPP','BO','BL','PK','BK'];
+const KATEGORI_ORDER = ['AL','PS','PIU','ALL','ALN','AT','ATB','KAT','KW','MD','PD','BPP','BO','PL','BL','PK','BK'];
 /* Kategori yang termasuk dalam Laba Rugi RILL (operasional) — dipakai untuk hitungan Laba/Rugi Bersih,
    Laba Ditahan, dan Laba Berjalan di Neraca. PK/BK sengaja TIDAK dimasukkan di sini. */
-const KATEGORI_LABA_RUGI = ['PD','BPP','BO','BL'];
+const KATEGORI_LABA_RUGI = ['PD','BPP','BO','PL','BL'];
 /* Kategori komprehensif (di luar Laba Rugi rill) — dipakai untuk baris "Laba Rugi Komprehensif". */
 const KATEGORI_KOMPREHENSIF = ['PK','BK'];
 function sortAkunList(list){
@@ -904,7 +904,7 @@ function sortAkunListWithHeaders(list){
   return out;
 }
 const DEBIT_NORMAL = new Set(['AL','PS','PIU','ALL','AT','ATB','ALN','BPP','BO','BL']);
-const KREDIT_NORMAL = new Set(['KAT','KW','MD','PD']);
+const KREDIT_NORMAL = new Set(['KAT','KW','MD','PD','PL']);
 const LOKASI_FREEZER = Array.from({length:13},(_,i)=>'Freezer CH-'+String(i+1).padStart(2,'0'));
 const LOKASI_KULKAS  = Array.from({length:6},(_,i)=>'Kulkas SH-'+String(i+1).padStart(2,'0'));
 const LOKASI_ALL = [...LOKASI_FREEZER, ...LOKASI_KULKAS];
@@ -1134,8 +1134,9 @@ function hitungLabaRugiPeriode(dari, sampai){
   const pd = sumByKategoriKepemilikanFiltered('PD', null, jlist);
   const bpp = sumByKategoriKepemilikanFiltered('BPP', null, jlist);
   const bo = sumByKategoriKepemilikanFiltered('BO', null, jlist);
+  const pl = sumByKategoriKepemilikanFiltered('PL', null, jlist);
   const bl = sumByKategoriKepemilikanFiltered('BL', null, jlist);
-  return { pd, bpp, bo, bl, beban: bpp+bo+bl, laba: pd-bpp-bo-bl };
+  return { pd, bpp, bo, pl, bl, beban: bpp+bo+bl, laba: pd-bpp-bo+pl-bl };
 }
 /* Generates `jumlah` consecutive periods (harian/mingguan/bulanan/tahunan) ending at the current day/week/month/year. */
 function generatePeriods(tipe, jumlah){
@@ -4343,8 +4344,9 @@ function labaRugiPerKepemilikan(kep){
   const pd = sumByKategoriKepemilikan('PD', kep);
   const bpp = sumByKategoriKepemilikan('BPP', kep);
   const bo = sumByKategoriKepemilikan('BO', kep);
+  const pl = sumByKategoriKepemilikan('PL', kep);
   const bl = sumByKategoriKepemilikan('BL', kep);
-  return pd - bpp - bo - bl;
+  return pd - bpp - bo + pl - bl;
 }
 
 /* ---- Pemisahan Laba Ditahan (akumulasi tahun-tahun sebelumnya) vs Laba Berjalan (tahun ini) ----
@@ -4364,8 +4366,9 @@ function labaRugiPerKepemilikanDalamRentang(kep, dari, sampai){
   const pd = sumByKategoriKepemilikanFiltered('PD', kep, jlist);
   const bpp = sumByKategoriKepemilikanFiltered('BPP', kep, jlist);
   const bo = sumByKategoriKepemilikanFiltered('BO', kep, jlist);
+  const pl = sumByKategoriKepemilikanFiltered('PL', kep, jlist);
   const bl = sumByKategoriKepemilikanFiltered('BL', kep, jlist);
-  return pd - bpp - bo - bl;
+  return pd - bpp - bo + pl - bl;
 }
 function labaDitahanAkumulasi(kep, sampaiTanggal){
   // seluruh transaksi sebelum 1 Januari tahun (dari tanggal acuan, default hari ini)
@@ -8468,7 +8471,7 @@ function renderCashTable(opts){
 
 RENDERERS.kasmasuk = function(c){
   simpleCashForm(c, { kasLabel:'Diterima ke Kas/Bank', lawanLabel:'Sumber dana (Pendapatan/Piutang/Modal)',
-    lawanFilter:a=>['PD','KW','MD','ALN'].includes(a.kategori), debitIsKas:true, sumber:'Terima Uang' });
+    lawanFilter:a=>['PD','PL','KW','MD','ALN'].includes(a.kategori), debitIsKas:true, sumber:'Terima Uang' });
 };
 RENDERERS.kaskeluar = function(c){
   simpleCashForm(c, { kasLabel:'Dibayar dari Kas/Bank', lawanLabel:'Tujuan dana (Beban/Aset/Kewajiban)',
@@ -16872,11 +16875,12 @@ function labaRugiExportRows(jlist){
     const pd = sumByKategoriKepemilikanFiltered('PD', kep, jlist);
     const bpp = sumByKategoriKepemilikanFiltered('BPP', kep, jlist);
     const bo = sumByKategoriKepemilikanFiltered('BO', kep, jlist);
+    const pl = sumByKategoriKepemilikanFiltered('PL', kep, jlist);
     const bl = sumByKategoriKepemilikanFiltered('BL', kep, jlist);
-    rows.push([kep, pd, bpp, bo, bl, pd-bpp-bo-bl]);
+    rows.push([kep, pd, bpp, bo, pl, bl, pd-bpp-bo+pl-bl]);
   });
-  const totalPD=sumByKategoriKepemilikanFiltered('PD',null,jlist), totalBPP=sumByKategoriKepemilikanFiltered('BPP',null,jlist), totalBO=sumByKategoriKepemilikanFiltered('BO',null,jlist), totalBL=sumByKategoriKepemilikanFiltered('BL',null,jlist);
-  rows.push(['Total', totalPD, totalBPP, totalBO, totalBL, totalPD-totalBPP-totalBO-totalBL]);
+  const totalPD=sumByKategoriKepemilikanFiltered('PD',null,jlist), totalBPP=sumByKategoriKepemilikanFiltered('BPP',null,jlist), totalBO=sumByKategoriKepemilikanFiltered('BO',null,jlist), totalPL=sumByKategoriKepemilikanFiltered('PL',null,jlist), totalBL=sumByKategoriKepemilikanFiltered('BL',null,jlist);
+  rows.push(['Total', totalPD, totalBPP, totalBO, totalPL, totalBL, totalPD-totalBPP-totalBO+totalPL-totalBL]);
   return rows;
 }
 // Ekspor Excel Laba Rugi khusus (bukan lewat exportRowsToExcel generik). Layoutnya meniru laporan
@@ -16975,10 +16979,13 @@ function labaRugiExportExcelCustom(jlist, dateRangeText){
 
     labelRow('Pendapatan (Beban Lain-lain)');
     labelRow('Pendapatan Lain-Lain');
+    const totalPL = categorySection('PL');
+    totalRow('Total dari Pendapatan Lain-Lain', totalPL);
     labelRow('Beban Lain-Lain');
     const totalBL = categorySection('BL');
-    totalRow('Total dari Pendapatan (Beban Lain-lain)', -totalBL);
-    totalRow('Laba (Rugi)', labaOperasional-totalBL);
+    totalRow('Total dari Beban Lain-Lain', -totalBL);
+    totalRow('Total dari Pendapatan (Beban Lain-lain)', totalPL-totalBL);
+    totalRow('Laba (Rugi)', labaOperasional+totalPL-totalBL);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!merges'] = merges;
@@ -17136,10 +17143,13 @@ function labaRugiExportPdfCustom(jlist, periodeText, existingDoc){
 
     sectionRow('Pendapatan (Beban Lain-lain)');
     labelRow('Pendapatan Lain-Lain', 1);
+    const totalPL = categorySection('PL', 1);
+    groupRow('Total dari Pendapatan Lain-Lain', totalPL);
     labelRow('Beban Lain-Lain', 1);
     const totalBL = categorySection('BL', 1);
-    groupRow('Total dari Pendapatan (Beban Lain-lain)', -totalBL);
-    totalRow('Laba (Rugi)', labaOperasional-totalBL);
+    groupRow('Total dari Beban Lain-Lain', -totalBL);
+    groupRow('Total dari Pendapatan (Beban Lain-lain)', totalPL-totalBL);
+    totalRow('Laba (Rugi)', labaOperasional+totalPL-totalBL);
 
     // Kolom % — dihitung belakangan (setelah seluruh baris & Total Pendapatan diketahui) sebagai
     // persentase tiap baris terhadap Total Pendapatan (gaya "common-size income statement"), lalu
@@ -17192,10 +17202,11 @@ function renderLabaRugiRingkasan(c){
   const pd = sumByKategoriKepemilikanFiltered('PD', null, jlist);
   const bpp = sumByKategoriKepemilikanFiltered('BPP', null, jlist);
   const bo = sumByKategoriKepemilikanFiltered('BO', null, jlist);
+  const pl = sumByKategoriKepemilikanFiltered('PL', null, jlist);
   const bl = sumByKategoriKepemilikanFiltered('BL', null, jlist);
   const labaKotor = pd-bpp;
   const labaOperasional = labaKotor-bo;
-  const lr = labaOperasional-bl; // laba bersih
+  const lr = labaOperasional+pl-bl; // laba bersih
   const valBoxHtml = (label, val, colored)=> `<div class="field"><label>${label}</label><div style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);box-sizing:border-box;font-family:'Poppins';font-size:15.5px;font-weight:600;line-height:1.3;color:${colored?(val>=0?'var(--debit)':'var(--kredit)'):'var(--ink)'}">${fmtRp(val)}</div></div>`;
   let html = `<div class="card" style="margin-bottom:14px">
     <div class="section-title"><h3>Filter Periode</h3>${ioToolbarHtml('labarugi', labaRugiIoCfg(jlist))}</div>
@@ -17216,14 +17227,15 @@ function renderLabaRugiRingkasan(c){
   const totalPDforDonut = sumByKategoriKepemilikanFiltered('PD', null, jlist);
   const totalBPPforDonut = sumByKategoriKepemilikanFiltered('BPP', null, jlist);
   const totalBOforDonut = sumByKategoriKepemilikanFiltered('BO', null, jlist);
+  const totalPLforDonut = sumByKategoriKepemilikanFiltered('PL', null, jlist);
   const totalBLforDonut = sumByKategoriKepemilikanFiltered('BL', null, jlist);
-  const labaBersihDonut = totalPDforDonut - totalBPPforDonut - totalBOforDonut - totalBLforDonut;
+  const labaBersihDonut = totalPDforDonut - totalBPPforDonut - totalBOforDonut + totalPLforDonut - totalBLforDonut;
   // Total Pendapatan periode ini dipakai sebagai basis "% dari Pendapatan" di tiap baris rincian
   // akun di bawah (termasuk akun Pendapatan itu sendiri) — supaya langsung kelihatan mis. berapa
   // persen suatu Beban dari Pendapatan periode yang sama, tanpa perlu hitung manual.
   const totalPDBasis = sumByKategoriKepemilikanFiltered('PD', null, jlist);
   html += `<div class="card" style="margin-bottom:14px">`;
-  ['PD','BPP','BO','BL'].forEach(kat=>{
+  ['PD','BPP','BO','PL','BL'].forEach(kat=>{
     const akunsKat = DB.coa.filter(a=>a.kategori===kat);
     const subtotal = sumByKategoriKepemilikanFiltered(kat, null, jlist);
     html += `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:var(--terracotta-dark);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:6px"><span>${KAT[kat]}</span><span>${fmtRp(subtotal)}${fmtPct(subtotal,totalPDBasis)}</span></div>`;
@@ -17317,7 +17329,7 @@ function akunNominalPeriode(akun, jlistPeriode){
    beban (BPP/BO/BL), naik = kurang baik (merah/kredit) — supaya artinya intuitif buat user. */
 function lrChangeColor(kat, change){
   if(!change) return 'inherit';
-  const naikBaik = kat==='PD';
+  const naikBaik = kat==='PD' || kat==='PL';
   const naik = change>0;
   const baik = naikBaik ? naik : !naik;
   return baik ? 'var(--debit)' : 'var(--kredit)';
@@ -17382,7 +17394,7 @@ function simpulkanPenyebabLR(akun, jlistAwal, jlistAkhir){
 function renderLabaRugiCompareRincian(periods, periodJlists){
   let html = '';
   const jlistAwal = periodJlists[0]||[], jlistAkhir = periodJlists[periodJlists.length-1]||[];
-  ['PD','BPP','BO','BL'].forEach(kat=>{
+  ['PD','BPP','BO','PL','BL'].forEach(kat=>{
     const akunsKat = sortAkunList(DB.coa.filter(a=>a.kategori===kat && !a.isHeader));
     const rows = akunsKat.map(a=>{
       const values = periodJlists.map(jl=> akunNominalPeriode(a, jl));
