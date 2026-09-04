@@ -5358,6 +5358,10 @@ const KODE_TRANSAKSI_INFO = [
     'Debit — Bank BCA Pak Mahen', 'Kredit — Piutang Pihak Ketiga - xxx (nama akun dari remark transaksi)',
     'Debit — Hutang Bank BCA', 'Kredit — Bank BCA Pak Mahen'
   ], ket:'Pembayaran piutang dari perorangan (rekening Mahenda Abdillah Kamil)' },
+  { kode:'PDL', arah:'Masuk (CR)', kriteria:'Pendapatan lain', jurnal:[
+    'Debit — Bank BCA Pak Mahen', 'Kredit — Pendapatan Lain',
+    'Debit — Hutang Bank BCA', 'Kredit — Bank BCA Pak Mahen'
+  ], ket:'Penerimaan pendapatan lain' },
 ];
 
 function renderCoaKodeInfoTab(c){
@@ -5365,7 +5369,7 @@ function renderCoaKodeInfoTab(c){
   <div class="mini" style="margin-bottom:12px">Referensi kode klasifikasi mutasi rekening (kolom "Kode" pada CSV mutasi Bank BCA Pak Mahen) beserta pasangan jurnal debit/kredit standarnya. CR = dana masuk, DB = dana keluar.</div>
   <div class="tablewrap"><table class="sheet">
     <thead><tr>
-      <th>Kode</th><th>Arah</th><th>Kriteria</th><th>Keterangan</th>
+      <th>Kode</th><th>Arah</th><th>Keterangan</th><th>Kriteria</th>
       <th>Debit 1</th><th>Kredit 1</th><th>Debit 2</th><th>Kredit 2</th>
     </tr></thead>
     <tbody>
@@ -5373,8 +5377,8 @@ function renderCoaKodeInfoTab(c){
         <tr>
           <td style="font-family:monospace;font-weight:700;white-space:nowrap">${k.kode}</td>
           <td><span class="badge-balance ${k.arah.startsWith('Masuk')?'ok':'bad'}">${k.arah}</span></td>
-          <td class="mini" style="min-width:200px">${k.kriteria}</td>
           <td class="mini" style="min-width:200px">${k.ket}</td>
+          <td class="mini" style="min-width:200px">${k.kriteria}</td>
           <td class="mini">${k.jurnal[0].replace('Debit — ','')}</td>
           <td class="mini">${k.jurnal[1].replace('Kredit — ','')}</td>
           <td class="mini">${k.jurnal[2].replace('Debit — ','')}</td>
