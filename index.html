@@ -2698,16 +2698,17 @@ async function manualUpdateSync(){
    (di collection "ledgers", id-nya beda per akun). Daftar akun (id + nama) disimpan di
    satu dokumen kecil meta/ledgerAccounts supaya daftar itu sendiri juga ikut sinkron
    lintas device, terlepas dari akun mana yang lagi aktif ditampilkan. */
-let ledgerAccounts = [{id:'utama', label:'Akun Utama', passcode:''}];
+let ledgerAccounts = [{id:'utama', label:'Akun Utama'}];
 let activeLedgerId = 'utama';
 const ACTIVE_LEDGER_KEY = 'inspira_active_ledger_id';
 const LEDGER_ACCOUNTS_CACHE_KEY = 'inspira_ledger_accounts_v1';
 
-/* Pastikan tiap item ledgerAccounts selalu punya field passcode (string 6 digit, atau ''
-   kalau akun itu tidak diproteksi PIN) — supaya data lama (sebelum fitur PIN ada) tetap aman dipakai. */
+/* Rapikan tiap item ledgerAccounts jadi {id, label} saja — field passcode lama (kalau ada,
+   dari data sebelum PIN dihapus) sengaja tidak dibawa lagi supaya semua akun langsung bisa
+   dipindah tanpa kode. */
 function normalizeLedgerAccounts(list){
-  if(!Array.isArray(list)) return [{id:'utama', label:'Akun Utama', passcode:''}];
-  return list.map(a=> ({ id:a.id, label:a.label||a.id, passcode: /^\d{6}$/.test(a.passcode) ? a.passcode : '' }));
+  if(!Array.isArray(list)) return [{id:'utama', label:'Akun Utama'}];
+  return list.map(a=> ({ id:a.id, label:a.label||a.id }));
 }
 
 function storageKeyForLedger(id){
@@ -2718,7 +2719,7 @@ function loadLedgerAccountsLocal(){
     const raw = localStorage.getItem(LEDGER_ACCOUNTS_CACHE_KEY);
     if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length) return normalizeLedgerAccounts(arr); }
   }catch(e){}
-  return [{id:'utama', label:'Akun Utama', passcode:''}];
+  return [{id:'utama', label:'Akun Utama'}];
 }
 function saveLedgerAccountsLocal(list){
   try{ localStorage.setItem(LEDGER_ACCOUNTS_CACHE_KEY, JSON.stringify(list)); }catch(e){}
@@ -2743,18 +2744,12 @@ async function pushLedgerAccountsCloud(list){
     toast('⚠️ Gagal sinkron daftar akun ke cloud ('+(e.code||e.message)+'). Cek apakah Firestore Rules sudah ditambah blok meta/ledgerAccounts.');
   }
 }
-function addLedgerAccount(label, passcode){
+function addLedgerAccount(label){
   const id = 'akun_'+uid();
-  ledgerAccounts.push({id, label, passcode: /^\d{6}$/.test(passcode) ? passcode : ''});
+  ledgerAccounts.push({id, label});
   saveLedgerAccountsLocal(ledgerAccounts);
   pushLedgerAccountsCloud(ledgerAccounts);
   return id;
-}
-function setLedgerPasscode(id, passcode){
-  const a = ledgerAccounts.find(x=>x.id===id); if(!a) return;
-  a.passcode = /^\d{6}$/.test(passcode) ? passcode : '';
-  saveLedgerAccountsLocal(ledgerAccounts);
-  pushLedgerAccountsCloud(ledgerAccounts);
 }
 function renameLedgerAccount(id, label){
   const a = ledgerAccounts.find(x=>x.id===id); if(!a) return;
@@ -2806,123 +2801,6 @@ async function switchLedgerAccount(newId){
     toast('⚠️ Gagal ambil data '+target.label+' dari cloud, memakai data lokal: '+err.message);
     listenCloudChanges();
   }
-}
-/* Modal PIN 6 digit — dipakai supaya pindah akun tidak perlu login ulang (Firebase login tetap
-   satu yang sama), tapi tetap ada penghalang ringan supaya tidak sembarang orang yang pegang HP/
-   laptop ini bisa langsung buka jurnal akun lain. */
-function openPasscodeModal(target, onSuccess){
-  const modalId = 'ledgerPasscodeModal';
-  const body = `
-    <div class="mini" style="margin-bottom:10px;line-height:1.6">Masukkan PIN 6 digit untuk masuk ke akun <b>${escHtml(target.label)}</b>.</div>
-    <input id="ledgerPasscodeInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" style="width:100%;text-align:center;letter-spacing:10px;font-size:22px;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink)">
-    <div class="mini" id="ledgerPasscodeError" style="color:#c0392b;margin-top:8px;min-height:16px"></div>
-    <button class="btn primary" id="btnConfirmLedgerPasscode" style="margin-top:6px;width:100%">Masuk</button>
-    <button class="btn small" id="btnLupaLedgerPasscode" type="button" style="margin-top:8px;width:100%">Lupa PIN?</button>
-  `;
-  const m = openFormModal('Masukkan PIN — '+target.label, body, modalId);
-  const input = m.querySelector('#ledgerPasscodeInput');
-  const err = m.querySelector('#ledgerPasscodeError');
-  setTimeout(()=> input && input.focus(), 50);
-  const submit = ()=>{
-    const v = (input.value||'').trim();
-    if(!/^\d{6}$/.test(v)){ err.textContent = 'PIN harus 6 digit angka.'; return; }
-    if(v !== target.passcode){ err.textContent = 'PIN salah, coba lagi.'; input.value=''; input.focus(); return; }
-    m.remove();
-    onSuccess();
-  };
-  m.querySelector('#btnConfirmLedgerPasscode').addEventListener('click', submit);
-  m.querySelector('#btnLupaLedgerPasscode').addEventListener('click', ()=>{ m.remove(); openPasscodeResetModal(target); });
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submit(); } });
-  input.addEventListener('input', ()=>{ input.value = input.value.replace(/\D/g,'').slice(0,6); });
-}
-
-/* ---- Lupa PIN Switch Akun (proteksi ringan) ----
-   PIN 6 digit di fitur Switch Akun cuma penghalang ringan (bukan lapisan keamanan utama —
-   itu tetap login Firebase), jadi kalau lupa boleh direset sendiri lewat tombol khusus ini,
-   tanpa perlu Admin lain. Kode reset 6 digit dikirim ke email akun yang sedang login (email
-   itu sendiri sudah terverifikasi lewat proses login Firebase), berlaku 10 menit, dan
-   disimpan sementara di Firestore supaya valid lintas device/refresh. */
-const PIN_RESET_EXPIRY_MS = 10*60*1000;
-function pinResetDocId(ledgerId){ return ledgerId; }
-async function requestLedgerPasscodeReset(target){
-  if(!FIREBASE_CONFIGURED || !firebaseDb || !firebaseAuth || !firebaseAuth.currentUser){
-    toast('Sinkronisasi cloud belum diatur — reset PIN lewat email belum bisa dipakai.');
-    return false;
-  }
-  if(!EMAILJS_CONFIGURED){
-    toast('Pengiriman email belum diatur (EMAILJS_CONFIG) — minta Admin lain reset PIN lewat tombol "Ubah PIN".');
-    return false;
-  }
-  const email = firebaseAuth.currentUser.email;
-  const code = String(Math.floor(100000 + Math.random()*900000));
-  try{
-    await firebaseDb.collection('meta').doc('pinResets').collection('items').doc(pinResetDocId(target.id)).set({
-      code, email, expiresAt: Date.now() + PIN_RESET_EXPIRY_MS
-    });
-    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-      to_email: email,
-      reset_code: code,
-      account_label: target.label
-    });
-    toast('Kode reset dikirim ke '+email+' — cek folder Spam/Promosi juga. Berlaku 10 menit.');
-    return true;
-  }catch(err){
-    toast('Gagal mengirim kode reset: '+(err.text||err.message||'Kesalahan tidak diketahui'));
-    return false;
-  }
-}
-async function verifyLedgerPasscodeResetCode(ledgerId, code){
-  if(!firebaseDb) return false;
-  try{
-    const snap = await firebaseDb.collection('meta').doc('pinResets').collection('items').doc(pinResetDocId(ledgerId)).get();
-    if(!snap.exists) return false;
-    const data = snap.data();
-    if(!data || data.code!==code) return false;
-    if(!data.expiresAt || Date.now() > data.expiresAt) return false;
-    return true;
-  }catch(err){ return false; }
-}
-async function clearLedgerPasscodeReset(ledgerId){
-  if(!firebaseDb) return;
-  try{ await firebaseDb.collection('meta').doc('pinResets').collection('items').doc(pinResetDocId(ledgerId)).delete(); }catch(e){}
-}
-function openPasscodeResetModal(target){
-  const modalId = 'ledgerPasscodeResetModal';
-  const body = `
-    <div class="mini" style="margin-bottom:10px;line-height:1.6">Reset PIN untuk akun <b>${escHtml(target.label)}</b> ini cuma proteksi ringan — verifikasinya dikirim lewat email akun yang sedang login. Klik "Kirim Kode" dulu, cek email, lalu isi kode & PIN baru di bawah.</div>
-    <button class="btn small" id="btnKirimKodeReset" type="button" style="width:100%;margin-bottom:10px">Kirim Kode ke Email</button>
-    <div class="field"><label>Kode dari Email (6 digit)</label><input id="pinResetCodeInput" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" style="width:100%;text-align:center;letter-spacing:6px"></div>
-    <div class="field" style="margin-top:8px"><label>PIN Baru (6 digit)</label><input id="pinResetNewPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••••" style="width:100%;text-align:center;letter-spacing:6px"></div>
-    <div class="mini" id="pinResetError" style="color:#c0392b;margin-top:8px;min-height:16px"></div>
-    <button class="btn primary" id="btnKonfirmasiReset" style="margin-top:6px;width:100%">Simpan PIN Baru</button>
-  `;
-  const m = openFormModal('Lupa PIN — '+target.label, body, modalId);
-  const codeInput = m.querySelector('#pinResetCodeInput');
-  const pinInput = m.querySelector('#pinResetNewPin');
-  const err = m.querySelector('#pinResetError');
-  const btnKirim = m.querySelector('#btnKirimKodeReset');
-  btnKirim.addEventListener('click', async ()=>{
-    btnKirim.disabled = true; btnKirim.textContent = 'Mengirim…';
-    await requestLedgerPasscodeReset(target);
-    btnKirim.disabled = false; btnKirim.textContent = 'Kirim Ulang Kode';
-    setTimeout(()=> codeInput && codeInput.focus(), 50);
-  });
-  codeInput.addEventListener('input', ()=>{ codeInput.value = codeInput.value.replace(/\D/g,'').slice(0,6); });
-  pinInput.addEventListener('input', ()=>{ pinInput.value = pinInput.value.replace(/\D/g,'').slice(0,6); });
-  m.querySelector('#btnKonfirmasiReset').addEventListener('click', async ()=>{
-    const code = (codeInput.value||'').trim();
-    const newPin = (pinInput.value||'').trim();
-    if(!/^\d{6}$/.test(code)){ err.textContent = 'Isi kode 6 digit dari email dulu.'; return; }
-    if(!/^\d{6}$/.test(newPin)){ err.textContent = 'PIN baru harus 6 digit angka.'; return; }
-    err.textContent = 'Memeriksa kode…';
-    const valid = await verifyLedgerPasscodeResetCode(target.id, code);
-    if(!valid){ err.textContent = 'Kode salah atau sudah kedaluwarsa (berlaku 10 menit). Klik "Kirim Ulang Kode" untuk minta kode baru.'; return; }
-    setLedgerPasscode(target.id, newPin);
-    await clearLedgerPasscodeReset(target.id);
-    m.remove();
-    toast('PIN akun "'+target.label+'" berhasil direset.');
-    if(typeof renderContent==='function') renderContent();
-  });
 }
 /* Firestore membatasi 1 dokumen maksimal ±1.048.487 byte. Karena seluruh data ledger
    (jurnal, akun, dll) disimpan sebagai satu teks JSON, data yang sudah banyak bisa
@@ -4499,8 +4377,8 @@ function renderNav(){
 /* ---- Account switcher di sidebar (di atas Dashboard) ----
    Menampilkan nama akun/jurnal yang sedang aktif & memungkinkan pindah akun langsung dari
    sidebar, tanpa perlu buka Setting dulu. Daftar akun & logika pindahnya sendiri pakai
-   fungsi yang sama dengan Setting > User > Switch Akun (ledgerAccounts, switchLedgerAccount,
-   openPasscodeModal) supaya perilakunya (termasuk proteksi PIN) tetap konsisten. */
+   fungsi yang sama dengan Setting > User > Switch Akun (ledgerAccounts, switchLedgerAccount)
+   supaya perilakunya tetap konsisten. */
 function renderAccountSwitcher(){
   const wrap = document.getElementById('accountSwitcherWrap');
   const nameEl = document.getElementById('accountSwitcherName');
@@ -4536,7 +4414,7 @@ function openAccountSwitcherMenu(){
   // overflow sidebar, dan tetap muncul benar walau sidebar sedang diciutkan (icon-only).
   menu.innerHTML = ledgerAccounts.map(a=>`
     <button type="button" class="account-switcher-item ${a.id===activeLedgerId?'active':''}" data-id="${a.id}">
-      <span class="account-switcher-item-name">${a.passcode?'🔒 ':''}${escHtml(a.label)}</span>
+      <span class="account-switcher-item-name">${escHtml(a.label)}</span>
       ${a.id===activeLedgerId?'<span class="account-switcher-item-check">✓</span>':''}
     </button>`).join('')
     + '<div class="account-switcher-divider"></div>'
@@ -4554,11 +4432,7 @@ function openAccountSwitcherMenu(){
       if(id===activeLedgerId) return;
       const target = ledgerAccounts.find(a=>a.id===id);
       if(!target) return;
-      if(target.passcode){
-        openPasscodeModal(target, ()=> switchLedgerAccount(target.id));
-      } else {
-        switchLedgerAccount(target.id);
-      }
+      switchLedgerAccount(target.id);
     });
   });
   const manageBtn = menu.querySelector('#btnAccountSwitcherManage');
@@ -19286,27 +19160,24 @@ RENDERERS.settings = function(c){
 
   const switchAkunHtml = `<div class="card" style="margin-bottom:14px">
     <div class="section-title"><h3>Switch Akun (Jurnal)</h3></div>
-    <div style="margin-bottom:10px">${infoNoteHtml('Cara kerja Switch Akun', `Kelola beberapa jurnal terpisah pakai 1 login yang sama — cocok kalau Kak Candy mau pisahkan pembukuan 2 usaha/klien di web yang sama. Akun baru mulai <b>benar-benar kosong</b> — Chart of Account (COA) dan jurnal/transaksinya sama-sama kosong, jadi tidak tercampur dengan akun akuntansi dari akun lain. Pindah akun <b>tidak perlu login ulang</b> — cukup masukkan PIN 6 digit akun tujuan (kalau akun itu diproteksi PIN).`)}</div>
+    <div style="margin-bottom:10px">${infoNoteHtml('Cara kerja Switch Akun', `Kelola beberapa jurnal terpisah pakai 1 login yang sama — cocok kalau Kak Candy mau pisahkan pembukuan 2 usaha/klien di web yang sama. Akun baru mulai <b>benar-benar kosong</b> — Chart of Account (COA) dan jurnal/transaksinya sama-sama kosong, jadi tidak tercampur dengan akun akuntansi dari akun lain. Pindah akun <b>tidak perlu login ulang</b> — cukup pilih akun tujuan.`)}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <select id="ledgerAccountSelect" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink);min-width:180px">
-        ${ledgerAccounts.map(a=>`<option value="${a.id}" ${a.id===activeLedgerId?'selected':''}>${a.passcode?'🔒 ':''}${escHtml(a.label)}${a.id===activeLedgerId?' (aktif)':''}</option>`).join('')}
+        ${ledgerAccounts.map(a=>`<option value="${a.id}" ${a.id===activeLedgerId?'selected':''}>${escHtml(a.label)}${a.id===activeLedgerId?' (aktif)':''}</option>`).join('')}
       </select>
       <button class="btn small primary" id="btnSwitchLedger">Pindah ke Akun Ini</button>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <input id="newLedgerLabel" placeholder="Nama akun baru, mis. Akun Klien A" style="flex:1;min-width:180px;max-width:260px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink)">
-      <input id="newLedgerPasscode" placeholder="PIN 6 digit" inputmode="numeric" maxlength="6" style="width:120px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink);letter-spacing:2px">
       <button class="btn small" id="btnAddLedgerAccount">+ Tambah Akun Baru</button>
     </div>
     <div class="tablewrap" style="margin-top:12px"><table class="sheet"><thead><tr><th>Akun</th><th></th></tr></thead><tbody>
-    ${ledgerAccounts.map(a=>`<tr><td>${a.passcode?'🔒 ':''}${escHtml(a.label)}${a.id===activeLedgerId?' <span class="tag a">Aktif</span>':''}</td><td>
+    ${ledgerAccounts.map(a=>`<tr><td>${escHtml(a.label)}${a.id===activeLedgerId?' <span class="tag a">Aktif</span>':''}</td><td>
       <button class="btn small btnRenameLedger" data-id="${a.id}">Rename</button>
-      <button class="btn small btnSetPinLedger" data-id="${a.id}">${a.passcode?'Ubah PIN':'Atur PIN'}</button>
-      ${a.passcode ? `<button class="btn small btnLupaPinLedger" data-id="${a.id}">Lupa PIN?</button>` : ''}
       ${a.id!=='utama' && a.id!==activeLedgerId ? `<button class="btn small danger btnDelLedger" data-id="${a.id}">Hapus dari Daftar</button>` : ''}
     </td></tr>`).join('')}
     </tbody></table></div>
-    <div class="mini" style="margin-top:8px;color:var(--ink-soft)">"Hapus dari Daftar" hanya menghilangkan akun itu dari pilihan switch & cache di device ini — data jurnalnya di cloud tetap aman. Akun tanpa PIN bisa langsung dipindah tanpa diminta kode.</div>
+    <div class="mini" style="margin-top:8px;color:var(--ink-soft)">"Hapus dari Daftar" hanya menghilangkan akun itu dari pilihan switch & cache di device ini — data jurnalnya di cloud tetap aman.</div>
   </div>`;
 
   const profilUsahaHtml = `<div class="card" style="margin-bottom:14px">
@@ -19465,25 +19336,19 @@ RENDERERS.settings = function(c){
       if(!sel || !sel.value) return;
       const target = ledgerAccounts.find(a=>a.id===sel.value);
       if(!target) return;
-      if(target.passcode){
-        openPasscodeModal(target, ()=> switchLedgerAccount(target.id));
-      } else {
-        switchLedgerAccount(target.id);
-      }
+      switchLedgerAccount(target.id);
     });
     const btnAddLedgerAccount = document.getElementById('btnAddLedgerAccount');
     if(btnAddLedgerAccount) btnAddLedgerAccount.addEventListener('click', async ()=>{
       const v = document.getElementById('newLedgerLabel').value.trim();
-      const pin = document.getElementById('newLedgerPasscode').value.trim();
       if(!v) return toast('Isi nama akun baru');
-      if(!/^\d{6}$/.test(pin)) return toast('Isi PIN 6 digit angka untuk akun baru ini');
       btnAddLedgerAccount.disabled = true;
-      const newId = addLedgerAccount(v, pin);
+      const newId = addLedgerAccount(v);
       const initialDb = buildInitialDbForNewLedger();
       try{ await idbSetLedger(storageKeyForLedger(newId), JSON.stringify(initialDb)); }catch(e){}
       await pushDbToLedgerId(newId, initialDb);
       toast('Akun "'+v+'" dibuat (COA & jurnal kosong) — berpindah ke akun ini…');
-      await switchLedgerAccount(newId); // langsung pindah, tanpa PIN — baru saja diatur sendiri
+      await switchLedgerAccount(newId); // langsung pindah — baru saja dibuat
     });
     c.querySelectorAll('.btnRenameLedger').forEach(btn=> btn.addEventListener('click', ()=>{
       const a = ledgerAccounts.find(x=>x.id===btn.dataset.id); if(!a) return;
@@ -19494,25 +19359,11 @@ RENDERERS.settings = function(c){
       renameLedgerAccount(a.id, trimmed);
       renderContent();
     }));
-    c.querySelectorAll('.btnSetPinLedger').forEach(btn=> btn.addEventListener('click', ()=>{
-      const a = ledgerAccounts.find(x=>x.id===btn.dataset.id); if(!a) return;
-      const nn = prompt('PIN baru 6 digit untuk akun "'+a.label+'" (kosongkan lalu OK untuk hapus PIN/tanpa proteksi):', a.passcode||'');
-      if(nn===null) return;
-      const trimmed = nn.trim();
-      if(trimmed && !/^\d{6}$/.test(trimmed)) return toast('PIN harus 6 digit angka, atau kosongkan untuk hapus PIN');
-      setLedgerPasscode(a.id, trimmed);
-      toast(trimmed ? 'PIN diperbarui' : 'PIN dihapus — akun ini bisa dipindah tanpa kode');
-      renderContent();
-    }));
     c.querySelectorAll('.btnDelLedger').forEach(btn=> btn.addEventListener('click', ()=>{
       const a = ledgerAccounts.find(x=>x.id===btn.dataset.id); if(!a) return;
       if(!confirm('Hapus akun "'+a.label+'" dari daftar switch di device ini? Data jurnalnya di cloud TIDAK terhapus.')) return;
       deleteLedgerAccount(a.id);
       toast('Akun dihapus dari daftar'); renderContent();
-    }));
-    c.querySelectorAll('.btnLupaPinLedger').forEach(btn=> btn.addEventListener('click', ()=>{
-      const a = ledgerAccounts.find(x=>x.id===btn.dataset.id); if(!a) return;
-      openPasscodeResetModal(a);
     }));
     const btnSimpanProfilUsaha = document.getElementById('btnSimpanProfilUsaha');
     if(btnSimpanProfilUsaha) btnSimpanProfilUsaha.addEventListener('click', ()=>{
