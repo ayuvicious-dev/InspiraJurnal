@@ -3250,16 +3250,16 @@ async function pushDbToLedgerId(ledgerId, dbObj){
   }
 }
 
-/* Susun DB awal untuk akun baru: duplikat struktur COA + daftar master/kategori dari akun
-   yang sedang aktif (DB saat ini), tapi semua data transaksi (jurnal, pembelian, penjualan,
-   dst) tetap kosong seperti freshDB(). Counters ikut diduplikat supaya penomoran kode akun
-   baru nanti melanjutkan, bukan mengulang dari 001 dan bentrok dengan kode yang sudah ada. */
+/* Susun DB awal untuk akun baru: akun baru mulai dengan COA KOSONG (tidak menduplikat akun
+   akuntansi dari akun yang sedang aktif) — hanya daftar master/kategori non-COA yang ikut
+   dibawa supaya dropdown-dropdown (kepemilikan, jenis bahan, satuan, dst) tidak perlu diisi
+   ulang dari nol. Semua data transaksi (jurnal, pembelian, penjualan, dst) tetap kosong
+   seperti freshDB(). coa & counters SENGAJA tidak diduplikat (biarkan default freshDB() yang
+   kosong) supaya akun baru benar-benar bersih dari akun akuntansi akun lain. */
 function buildInitialDbForNewLedger(){
   const base = freshDB();
   if(DB){
     const cloneField = (key, fallback)=>{ try{ return JSON.parse(JSON.stringify(DB[key]!==undefined ? DB[key] : fallback)); }catch(e){ return fallback; } };
-    base.coa = cloneField('coa', []);
-    base.counters = cloneField('counters', {});
     base.kepemilikanCustom = cloneField('kepemilikanCustom', []);
     base.jenisBahanCustom = cloneField('jenisBahanCustom', []);
     base.jenisResepCustom = cloneField('jenisResepCustom', base.jenisResepCustom);
@@ -19286,7 +19286,7 @@ RENDERERS.settings = function(c){
 
   const switchAkunHtml = `<div class="card" style="margin-bottom:14px">
     <div class="section-title"><h3>Switch Akun (Jurnal)</h3></div>
-    <div style="margin-bottom:10px">${infoNoteHtml('Cara kerja Switch Akun', `Kelola beberapa jurnal terpisah pakai 1 login yang sama — cocok kalau Kak Candy mau pisahkan pembukuan 2 usaha/klien di web yang sama. Akun baru otomatis dapat <b>struktur Chart of Account (COA) yang sama</b> seperti akun yang sedang aktif ini, tapi <b>jurnal &amp; semua transaksinya kosong</b> — jadi tidak perlu bikin daftar akun dari nol, dan transaksi antar akun tidak bersinggungan sama sekali. Pindah akun <b>tidak perlu login ulang</b> — cukup masukkan PIN 6 digit akun tujuan (kalau akun itu diproteksi PIN).`)}</div>
+    <div style="margin-bottom:10px">${infoNoteHtml('Cara kerja Switch Akun', `Kelola beberapa jurnal terpisah pakai 1 login yang sama — cocok kalau Kak Candy mau pisahkan pembukuan 2 usaha/klien di web yang sama. Akun baru mulai <b>benar-benar kosong</b> — Chart of Account (COA) dan jurnal/transaksinya sama-sama kosong, jadi tidak tercampur dengan akun akuntansi dari akun lain. Pindah akun <b>tidak perlu login ulang</b> — cukup masukkan PIN 6 digit akun tujuan (kalau akun itu diproteksi PIN).`)}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <select id="ledgerAccountSelect" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink);min-width:180px">
         ${ledgerAccounts.map(a=>`<option value="${a.id}" ${a.id===activeLedgerId?'selected':''}>${a.passcode?'🔒 ':''}${escHtml(a.label)}${a.id===activeLedgerId?' (aktif)':''}</option>`).join('')}
@@ -19482,7 +19482,7 @@ RENDERERS.settings = function(c){
       const initialDb = buildInitialDbForNewLedger();
       try{ await idbSetLedger(storageKeyForLedger(newId), JSON.stringify(initialDb)); }catch(e){}
       await pushDbToLedgerId(newId, initialDb);
-      toast('Akun "'+v+'" dibuat (struktur COA sama, jurnal kosong) — berpindah ke akun ini…');
+      toast('Akun "'+v+'" dibuat (COA & jurnal kosong) — berpindah ke akun ini…');
       await switchLedgerAccount(newId); // langsung pindah, tanpa PIN — baru saja diatur sendiri
     });
     c.querySelectorAll('.btnRenameLedger').forEach(btn=> btn.addEventListener('click', ()=>{
