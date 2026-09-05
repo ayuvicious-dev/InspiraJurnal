@@ -699,6 +699,7 @@ a.crumbLink:last-child{color:var(--terracotta-dark);font-weight:600}
         <button class="btn" id="btnScrollBottom" title="Scroll otomatis ke paling bawah">⬇ Ke Bawah</button>
         <button class="btn" id="btnThemeToggle" title="Ganti tampilan terang/gelap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path></svg>Gelap</button>
         <button class="btn" id="btnExport">⬇ Backup JSON</button>
+        <button class="btn" id="btnExportAll" title="Backup semua akun (Akun Utama, Sera Sensa, dll) jadi satu file">⬇⬇ Backup Semua Akun</button>
         <button class="btn" id="btnImport">⬆ Restore</button>
         <input type="file" id="fileImport" accept="application/json" class="hidden">
       </div>
@@ -3193,6 +3194,202 @@ async function fetchRemoteDb(){
   if(meta && meta.db) return meta.db; // format lama sekali, sebelum ada chunking
   return null;
 }
+
+/* ================= BACKUP GABUNGAN SEMUA AKUN =================
+   Tombol "Backup JSON" biasa cuma membackup DB yang sedang aktif di layar (satu akun/ledger
+   saja). Fungsi-fungsi di bawah ini dipakai khusus oleh tombol "Backup Semua Akun" supaya bisa
+   membaca SETIAP akun di ledgerAccounts satu-satu — TANPA pindah akun aktif di UI (tidak
+   menyentuh activeLedgerId/cloudDocRef/DB global) — lalu menggabungkan semuanya jadi satu file. */
+
+/* Ambil isi mentah (string JSON) satu ledger tertentu, prioritas:
+   1. Kalau id-nya sama dengan akun yang SEDANG aktif, pakai DB yang ada di memori langsung —
+      ini yang paling segar, termasuk perubahan yang belum sempat ke-sync ke cloud.
+   2. Kalau tidak, coba ambil dari cloud (format storagePath / chunkCount / db lama — sama
+      seperti fetchRemoteDb(), tapi pakai firebaseDb.collection('ledgers').doc(id) sendiri,
+      bukan cloudDocRef global, supaya tidak mengganggu akun yang sedang aktif).
+   3. Kalau cloud gagal/tidak ada koneksi/tidak dikonfigurasi, fallback ke salinan lokal
+      (IndexedDB) akun itu di device ini, kalau pernah pernah dibuka sebelumnya. */
+async function fetchLedgerDbRawForBackup(id){
+  if(id===activeLedgerId && typeof DB!=='undefined' && DB) return JSON.stringify(DB);
+  if(firebaseDb){
+    try{
+      const ref = firebaseDb.collection('ledgers').doc(id);
+      const snap = await ref.get();
+      if(snap.exists){
+        const meta = snap.data();
+        if(meta && meta.storagePath) return await downloadDbJsonFromStorage(meta.storagePath);
+        if(meta && meta.chunkCount){
+          const chunksCol = ref.collection('chunks');
+          const docs = await Promise.all(
+            Array.from({length: meta.chunkCount}, (_,i)=> chunksCol.doc(String(i)).get())
+          );
+          return docs.map(d=> d.exists ? (d.data().data||'') : '').join('');
+        }
+        if(meta && meta.db) return meta.db;
+      }
+    }catch(e){ console.warn('Gagal ambil akun "'+id+'" dari cloud, coba salinan lokal:', e); }
+  }
+  try{
+    const raw = await idbGetLedger(storageKeyForLedger(id));
+    if(raw) return raw;
+  }catch(e){}
+  return null;
+}
+
+/* Susun & unduh SATU file JSON berisi seluruh akun (Akun Utama, Sera Sensa, dst).
+   Bentuk filenya SENGAJA beda dari backup single-akun biasa — dibungkus dengan
+   { __multiAccountBackup:true, accounts:[{id,label,data}, ...] } — supaya:
+   a) mudah dibedakan saat mau di-restore (per akun, satu-satu), dan
+   b) tidak ketuker/tersalah-baca oleh fitur Restore single-akun yang sudah ada
+      (fitur itu mengecek data.coa langsung di root, yang tidak akan ada di file ini). */
+async function backupAllLedgerAccounts(){
+  if(!ledgerAccounts || !ledgerAccounts.length){ toast('Belum ada daftar akun untuk dibackup.'); return; }
+  toast('Menyiapkan backup semua akun ('+ledgerAccounts.length+' akun)…');
+  const accounts = [];
+  const gagal = [];
+  for(const acc of ledgerAccounts){
+    let raw = null;
+    try{ raw = await fetchLedgerDbRawForBackup(acc.id); }
+    catch(e){ console.warn('Gagal ambil akun '+acc.label, e); }
+    let data = null;
+    if(raw){ try{ data = JSON.parse(raw); }catch(e){ data = null; } }
+    if(data) accounts.push({ id: acc.id, label: acc.label, data });
+    else gagal.push(acc.label);
+  }
+  if(!accounts.length){
+    toast('⚠️ Gagal membackup semua akun (tidak ada data yang berhasil diambil). Cek koneksi lalu coba lagi.');
+    return;
+  }
+  const payload = {
+    __multiAccountBackup: true,
+    appVersion: 'inspira-ledger',
+    exportedAt: new Date().toISOString(),
+    accounts
+  };
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'inspira-ledger-backup-SEMUA-AKUN-'+todayStr()+'.json';
+  a.click(); URL.revokeObjectURL(url);
+  if(gagal.length){
+    toast('⚠️ Backup diunduh ('+accounts.length+' akun berhasil), tapi gagal ambil: '+gagal.join(', ')+'. Coba buka akun itu dulu (biar tersalin ke device ini) lalu backup ulang.');
+  } else {
+    toast('Backup semua akun ('+accounts.length+' akun) diunduh');
+  }
+}
+
+/* ================= RESTORE GABUNGAN SEMUA AKUN =================
+   Kebalikan dari backupAllLedgerAccounts(): membaca file hasil "Backup Semua Akun" (ditandai
+   __multiAccountBackup:true) dan menuliskan tiap akun di dalamnya balik ke tempatnya
+   masing-masing (lokal + cloud) — SATU-SATU per id akun, sama seperti saat membacanya. */
+
+/* Pastikan sebuah akun (id+label) ada di daftar ledgerAccounts, dengan id PERSIS seperti di
+   file backup (bukan bikin id baru seperti addLedgerAccount()) — supaya data yang direstore
+   nyambung ke ledger yang sama persis dengan waktu di-backup. Kalau id sudah ada, tidak
+   diapa-apakan (label yang sudah ada di device ini dipertahankan). */
+function ensureLedgerAccountEntry(id, label){
+  if(ledgerAccounts.some(a=>a.id===id)) return false;
+  ledgerAccounts.push({ id, label: label||id });
+  return true;
+}
+
+/* Restore satu akun (ledger) dari isi backup, ke tujuan id tertentu:
+   - mode 'gabung': union dengan data yang SUDAH ada di ledger itu sekarang (aman, lihat
+     mergeDbFull) — kalau ledger itu belum punya data sama sekali, otomatis jadi sama saja
+     dengan Timpa (tidak ada apa-apa untuk digabung).
+   - mode 'timpa': isi backup langsung menggantikan seluruhnya.
+   Field yang tidak ada di kedua sisi diisi dari freshDB() supaya tidak ada field undefined
+   yang bikin error saat ledger itu nanti benar-benar dibuka. */
+async function restoreOneLedgerAccount(id, incomingData, mode){
+  const isActive = (id===activeLedgerId);
+  let baseDb = null;
+  if(mode==='gabung'){
+    try{
+      const existingRaw = isActive ? JSON.stringify(DB) : await fetchLedgerDbRawForBackup(id);
+      if(existingRaw) baseDb = JSON.parse(existingRaw);
+    }catch(e){ baseDb = null; }
+  }
+  let newDb = (mode==='gabung' && baseDb) ? mergeDbFull(baseDb, incomingData) : incomingData;
+  const fresh = freshDB();
+  Object.keys(fresh).forEach(k=>{ if(newDb[k]===undefined) newDb[k] = fresh[k]; });
+  if(!newDb.coa || newDb.coa.length===0) newDb.coa = []; // biarkan kosong; seedCOA() cuma relevan utk akun aktif (lihat di bawah)
+
+  if(isActive){
+    DB = newDb;
+    if(!DB.coa || DB.coa.length===0) seedCOA();
+    ensureAutoAccounts();
+    runOneTimeMigrations();
+    save();
+    return;
+  }
+  // Akun BUKAN yang sedang aktif: simpan langsung ke penyimpanan lokal ledger itu + coba
+  // kirim ke cloud, TANPA pindah akun aktif di UI (sama seperti pushDbToLedgerId dipakai
+  // saat "Tambah Akun Baru").
+  await idbSetLedger(storageKeyForLedger(id), JSON.stringify(newDb));
+  try{ localStorage.setItem(unsyncedFlagKey(id), '1'); }catch(e){}
+  await pushDbToLedgerId(id, newDb);
+  // pushDbToLedgerId tidak melempar error ke sini (sudah ditangani/di-toast di dalamnya) —
+  // flag unsynced di atas sengaja TIDAK langsung dihapus di sini supaya kalau push barusan
+  // diam-diam gagal, ledger ini tetap otomatis dicoba disinkron ulang nanti begitu akun ini
+  // dibuka/di-switch (lihat switchLedgerAccount() & hasUnsyncedChanges()).
+}
+
+async function restoreAllLedgerAccounts(accounts, mode){
+  if(!Array.isArray(accounts) || !accounts.length){ toast('File backup tidak berisi data akun apapun.'); return; }
+  toast('Memulihkan '+accounts.length+' akun…');
+  let berhasil = 0;
+  const gagal = [];
+  let akunBaru = 0;
+  let sentuhAkunAktif = false;
+  for(const acc of accounts){
+    if(!acc || !acc.id || !acc.data){ gagal.push(acc && acc.label || acc && acc.id || '(tidak dikenal)'); continue; }
+    if(ensureLedgerAccountEntry(acc.id, acc.label)) akunBaru++;
+    try{
+      await restoreOneLedgerAccount(acc.id, acc.data, mode);
+      if(acc.id===activeLedgerId) sentuhAkunAktif = true;
+      berhasil++;
+    }catch(e){
+      console.warn('Gagal restore akun '+(acc.label||acc.id), e);
+      gagal.push(acc.label||acc.id);
+    }
+  }
+  if(akunBaru>0){ saveLedgerAccountsLocal(ledgerAccounts); pushLedgerAccountsCloud(ledgerAccounts); }
+  renderNav();
+  if(sentuhAkunAktif){ renderContent(); switchTab('dashboard'); }
+  if(gagal.length){
+    toast('⚠️ Restore selesai: '+berhasil+' akun berhasil, gagal: '+gagal.join(', ')+'.');
+  } else {
+    toast('Restore semua akun berhasil ('+berhasil+' akun'+(akunBaru? ', '+akunBaru+' akun baru ditambahkan ke daftar':'')+')');
+  }
+}
+
+/* Modal konfirmasi restore GABUNGAN semua akun — mirip openFullRestoreConfirmModal() tapi
+   untuk file yang berisi banyak akun sekaligus. Pilihan Gabung/Timpa berlaku SAMA untuk
+   semua akun di dalam file (bukan per-akun satu-satu, supaya tidak perlu klik berkali-kali). */
+function openMultiAccountRestoreConfirmModal(payload){
+  const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+  const daftarHtml = accounts.map(a=>`<li>${escHtml(a.label||a.id)}${ledgerAccounts.some(x=>x.id===a.id)?'':' <span class="tag">akun baru</span>'}</li>`).join('');
+  const m = openFormModal('Restore Backup Semua Akun', `
+    <div class="mini" style="margin-bottom:8px">File ini berisi ${accounts.length} akun:</div>
+    <ul style="margin:0 0 12px 18px;padding:0">${daftarHtml}</ul>
+    <div class="mini" style="margin-bottom:12px">Pilih cara restore (berlaku untuk SEMUA akun di atas):</div>
+    <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+      <button class="btn primary" id="multiRestoreGabung" type="button" style="white-space:normal;text-align:left;line-height:1.35;height:auto;width:100%;padding:10px 12px">➕ <b>Gabung</b> — tambahkan data dari backup yang BELUM ada di tiap akun (data yang sudah ada TIDAK diubah/ditimpa)</button>
+      <button class="btn danger" id="multiRestoreTimpa" type="button" style="white-space:normal;text-align:left;line-height:1.35;height:auto;width:100%;padding:10px 12px">⚠️ <b>Timpa Semua</b> — hapus data saat ini di TIAP akun di atas dan ganti total dengan isi file backup</button>
+      <button class="btn" id="multiRestoreBatal" type="button" style="width:100%">Batal</button>
+    </div>`, 'multiRestoreModal');
+  m.querySelector('#multiRestoreGabung').addEventListener('click', async ()=>{
+    m.remove();
+    await restoreAllLedgerAccounts(accounts, 'gabung');
+  });
+  m.querySelector('#multiRestoreTimpa').addEventListener('click', async ()=>{
+    if(!confirm('Yakin? Ini akan MENGHAPUS data saat ini di SEMUA ('+accounts.length+') akun di atas dan menggantinya total dengan isi file backup. Tindakan ini tidak bisa dibatalkan.')) return;
+    m.remove();
+    await restoreAllLedgerAccounts(accounts, 'timpa');
+  });
+  m.querySelector('#multiRestoreBatal').addEventListener('click', ()=> m.remove());
+}
+
 /* ---- Allowlist akses cloud ("allowedUsers/{email}") ----
    Firestore Rules (lihat komentar di atas FIREBASE_CONFIG) hanya mengizinkan baca/tulis
    dokumen ledger kalau email akun yang login punya dokumen di collection "allowedUsers".
@@ -19902,6 +20099,7 @@ function finishInit(){
   // sama seperti menu "Setting", ini hanya untuk Admin.
   if(!isAdmin()){
     document.getElementById('btnExport')?.remove();
+    document.getElementById('btnExportAll')?.remove();
     document.getElementById('btnImport')?.remove();
     document.getElementById('fileImport')?.remove();
   }
@@ -19913,6 +20111,14 @@ function finishInit(){
     a.click(); URL.revokeObjectURL(url);
     toast('Backup diunduh');
   });
+  document.getElementById('btnExportAll')?.addEventListener('click', async (e)=>{
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '⏳ Membackup…';
+    try{ await backupAllLedgerAccounts(); }
+    finally{ btn.disabled = false; btn.textContent = label; }
+  });
   document.getElementById('btnImport')?.addEventListener('click', ()=> document.getElementById('fileImport')?.click());
   document.getElementById('fileImport')?.addEventListener('change', e=>{
     const file = e.target.files[0]; if(!file) return;
@@ -19921,6 +20127,11 @@ function finishInit(){
       let data;
       try{
         data = JSON.parse(ev.target.result);
+        if(data && data.__multiAccountBackup===true && Array.isArray(data.accounts)){
+          e.target.value='';
+          openMultiAccountRestoreConfirmModal(data);
+          return;
+        }
         if(!data.coa) throw new Error('format tidak dikenali');
       }catch(err){ toast('File tidak valid: '+err.message); e.target.value=''; return; }
       e.target.value='';
