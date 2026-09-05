@@ -1010,6 +1010,11 @@ function ruSpChecklistCellHtml(items, i, field){
     </div>`;
 }
 function fmtRp(n){ n = Number(n)||0; return 'Rp' + n.toLocaleString('id-ID',{maximumFractionDigits:0}); }
+// Anggap saldo "nol" untuk tujuan tampilan/laporan bila setelah dibulatkan ke rupiah penuh
+// hasilnya 0 (mis. saldo desimal sangat kecil seperti 0.4 atau -0.4 yang lolos dari cek
+// `saldo !== 0` mentah tapi tampil membingungkan sebagai "Rp0" atau "-Rp0"). Dipakai di Neraca
+// (tampilan web & ekspor PDF) supaya akun semacam itu disembunyikan sepenuhnya.
+function isSaldoNolUntukTampilan(v){ return Math.round(Number(v)||0) === 0; }
 /* Satuan 'pcs' (jumlah satuan/biji) tidak butuh gramasi karena bukan satuan berat/volume yang bisa
    dikonversi ke gram. Dipakai di fitur Bahan resep untuk sembunyikan/nolkan input Gramasi. */
 function isSatuanPcs(satuan){ return String(satuan||'').trim().toLowerCase()==='pcs'; }
@@ -1797,22 +1802,49 @@ function pdfDrawHeader(doc, title, periodeText, opts){
   const wDiunduh = !opts.hideDownloadedAt ? doc.getTextWidth(diunduhText) : 0;
   const textWidth = Math.max(wNama, wTitle, wPeriode, wDiunduh);
 
-  const logoSize = 40, logoGap = 10;
-  const blockWidth = (logo ? logoSize+logoGap : 0) + textWidth;
-  const blockX = Math.max(marginLeft, (pageWidth-blockWidth)/2);
-
-  let textX = blockX, logoBottom = 16;
+  const logoMaxW = 90, logoMaxH = 40, logoGap = 10;
+  // Hitung ukuran logo yang ditampilkan mengikuti rasio aspek aslinya (mode "contain" di dalam
+  // kotak logoMaxW x logoMaxH), supaya logo yang bukan bujur sangkar tidak tampil gepeng/melar.
+  let logoW = 0, logoH = 0;
   if(logo){
-    try{ doc.addImage(logo, 'PNG', blockX, 16, logoSize, logoSize); textX = blockX+logoSize+logoGap; logoBottom = 16+logoSize; }catch(e){}
+    try{
+      const props = doc.getImageProperties(logo);
+      const ratio = props.width / props.height;
+      if(ratio >= logoMaxW/logoMaxH){ logoW = logoMaxW; logoH = logoMaxW/ratio; }
+      else { logoH = logoMaxH; logoW = logoMaxH*ratio; }
+    }catch(e){ logoW = logoMaxH; logoH = logoMaxH; }
+  }
+  const rightEdge = pageWidth-32;
+  const logoPosisi = (DB.profil && DB.profil.logoPosisi) || 'tengah';
+
+  // Catatan penting: nama usaha, judul laporan, dan periode HARUS selalu rata tengah halaman,
+  // berapa pun posisi logo. Hanya untuk posisi default ("tengah") logo & teks digabung jadi satu
+  // blok yang sama-sama diposisikan di tengah (logo di kiri teks). Untuk "kiri"/"kanan", logo
+  // berdiri sendiri di sisi yang dipilih dan TIDAK menggeser posisi teks — teks tetap di tengah.
+  let logoX, textX, textOpt, logoBottom = 16;
+  if(logoPosisi==='kiri' || logoPosisi==='kanan'){
+    logoX = logoPosisi==='kiri' ? marginLeft : Math.max(marginLeft, rightEdge-logoW);
+    textX = pageWidth/2;
+    textOpt = { align:'center' };
+  } else {
+    const blockWidth = (logo ? logoW+logoGap : 0) + textWidth;
+    const blockX = Math.max(marginLeft, (pageWidth-blockWidth)/2);
+    logoX = blockX;
+    textX = logo ? blockX+logoW+logoGap : blockX;
+    textOpt = undefined;
+  }
+
+  if(logo){
+    try{ doc.addImage(logo, 'PNG', logoX, 16, logoW, logoH); logoBottom = 16+logoH; }catch(e){}
   }
   doc.setFontSize(11); doc.setFont(undefined,'bold'); doc.setTextColor(60,50,40);
-  doc.text(namaUsaha, textX, 26);
+  doc.text(namaUsaha, textX, 26, textOpt);
   doc.setFontSize(15); doc.setFont(undefined,'bold'); doc.setTextColor(20,20,20);
-  doc.text(title, textX, 44);
+  doc.text(title, textX, 44, textOpt);
   doc.setFontSize(9); doc.setFont(undefined,'normal'); doc.setTextColor(90,80,70);
   let ty = 58;
-  if(periodeText){ doc.text(periodeText, textX, ty); ty += 12; }
-  if(!opts.hideDownloadedAt){ doc.text(diunduhText, textX, ty); }
+  if(periodeText){ doc.text(periodeText, textX, ty, textOpt); ty += 12; }
+  if(!opts.hideDownloadedAt){ doc.text(diunduhText, textX, ty, textOpt); }
   else { ty -= 12; }
   doc.setTextColor(0,0,0);
   const lineY = Math.max(logoBottom, ty+6);
@@ -2129,7 +2161,7 @@ function freshDB(){
     stepKategoriCustom:['Iris','Potong','Thawing','Blender','Tumis','Rebus','Goreng','Kukus','Oven','Air Fryer','Lainnya'],
     menuManualKategoriCustom:[],
     kepemilikanCustom:[],
-    profil:{namaUsaha:'', logoDataUrl:'', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48},
+    profil:{namaUsaha:'', logoDataUrl:'', logoPosisi:'tengah', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48, lpDataUrl:'', lpColor:'dark', lpPeriodeX:50, lpPeriodeY:28, lpPeriodeAlign:'center', lpPeriodeFontSize:13, lpTanggalX:70, lpTanggalY:80, lpTanggalAlign:'right', lpTanggalFontSize:12},
     pendingTransaksi:[],
     lrCatatan:{},
     goals:[],
@@ -16615,7 +16647,7 @@ function neracaExportPdfCustom(tgl, existingDoc){
     let totalAsetAll = 0;
     asetKat.forEach(kat=>{
       const akunsKat = DB.coa.filter(a=>a.kategori===kat);
-      const nonZero = akunsKat.filter(a=>getSaldo(a)!==0);
+      const nonZero = akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a)));
       if(nonZero.length===0) return;
       const subtotalRaw = akunsKat.reduce((s,a)=>s+getSaldo(a),0);
       const subtotal = kat==='KAT' ? -subtotalRaw : subtotalRaw;
@@ -16635,7 +16667,7 @@ function neracaExportPdfCustom(tgl, existingDoc){
     let totalKW = 0;
     kewajibanKat.forEach(kat=>{
       const akunsKat = DB.coa.filter(a=>a.kategori===kat);
-      const nonZero = akunsKat.filter(a=>getSaldo(a)!==0);
+      const nonZero = akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a)));
       const subtotal = akunsKat.reduce((s,a)=>s+getSaldo(a),0);
       totalKW += subtotal;
       if(nonZero.length){
@@ -16659,7 +16691,7 @@ function neracaExportPdfCustom(tgl, existingDoc){
       const saldoAwal = akunsMD.reduce((s,a)=>s+getSaldo(a),0);
       const totalKep = saldoAwal + labaDitahan + labaBerjalan;
       totalMD += totalKep;
-      akunGroupRows(akunsMD.filter(a=>getSaldo(a)!==0), 1);
+      akunGroupRows(akunsMD.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), 1);
       row('Laba Ditahan (akumulasi s.d. tahun lalu)', paren(labaDitahan), { indent:1, color: COL_SUBAKUN_TEXT, fontSize:8.2, pctVal: labaDitahan });
       row('Laba Berjalan (periode tahun ini)', paren(labaBerjalan), { indent:1, color: COL_SUBAKUN_TEXT, fontSize:8.2, pctVal: labaBerjalan });
     });
@@ -16771,7 +16803,7 @@ function neracaExportExcelCustom(tgl){
     let totalAsetAll = 0;
     asetKat.forEach(kat=>{
       const akunsKat = DB.coa.filter(a=>a.kategori===kat);
-      const nonZero = akunsKat.filter(a=>getSaldo(a)!==0);
+      const nonZero = akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a)));
       if(nonZero.length===0) return;
       const subtotalRaw = akunsKat.reduce((s,a)=>s+getSaldo(a),0);
       const subtotal = kat==='KAT' ? -subtotalRaw : subtotalRaw;
@@ -16797,7 +16829,7 @@ function neracaExportExcelCustom(tgl){
     let totalKW = 0;
     kewajibanKat.forEach(kat=>{
       const akunsKat = DB.coa.filter(a=>a.kategori===kat);
-      const nonZero = akunsKat.filter(a=>getSaldo(a)!==0);
+      const nonZero = akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a)));
       const subtotal = akunsKat.reduce((s,a)=>s+getSaldo(a),0);
       totalKW += subtotal;
       labelRow(KAT[kat]);
@@ -16828,7 +16860,7 @@ function neracaExportExcelCustom(tgl){
       totalMD += totalKep;
       const indentBase = multiKep ? 1 : 0;
       if(multiKep) labelRow(kep);
-      akunGroupAoaRows(akunsMD.filter(a=>getSaldo(a)!==0), indentBase);
+      akunGroupAoaRows(akunsMD.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), indentBase);
       akunRow('', 'Laba Ditahan (akumulasi s.d. tahun lalu)', labaDitahan, indentBase);
       akunRow('', 'Laba Berjalan (periode tahun ini)', labaBerjalan, indentBase);
     });
@@ -16928,7 +16960,7 @@ RENDERERS.neraca = function(c){
     const subtotalRaw = kat==='KAT' ? -subtotal : subtotal;
     html += `<div style="margin-bottom:10px"><div style="font-weight:700;font-size:12.8px;color:var(--terracotta-dark);margin-bottom:4px">${KAT[kat]}${kat==='KAT'?' (pengurang aset)':''} <span class="mini" style="font-weight:400">— ${kat==='KAT'?'-':''}${fmtRp(subtotalRaw)}${fmtPct(subtotal,totalAsetAll)}</span></div>`;
     // Flat, tidak dikelompokkan per kepemilikan — semua akun strata sama.
-    html += renderAkunGroupHtml(akunsKat.filter(a=>getSaldo(a)!==0), getSaldo, neracaCollapse, totalAsetAll);
+    html += renderAkunGroupHtml(akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), getSaldo, neracaCollapse, totalAsetAll);
     html += `</div>`;
   });
   html += `<div style="border-top:2px solid var(--ink);margin-top:10px;padding-top:8px;display:flex;justify-content:space-between;font-family:Poppins;font-weight:700"><span>Total Aset</span><span>${fmtRp(totalAsetAll)}</span></div></div>`;
@@ -16941,7 +16973,7 @@ RENDERERS.neraca = function(c){
     totalKW += subtotal;
     html += `<div style="margin-bottom:10px"><div style="font-weight:700;font-size:12.8px;color:var(--terracotta-dark);margin-bottom:4px">${KAT[kat]} <span class="mini" style="font-weight:400">— ${fmtRp(subtotal)}${fmtPct(subtotal,totalAsetAll)}</span></div>`;
     // Flat, tidak dikelompokkan per kepemilikan — semua akun strata sama.
-    html += renderAkunGroupHtml(akunsKat.filter(a=>getSaldo(a)!==0), getSaldo, neracaCollapse, totalAsetAll);
+    html += renderAkunGroupHtml(akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), getSaldo, neracaCollapse, totalAsetAll);
     html += `</div>`;
   });
   html += `<div style="display:flex;justify-content:space-between;font-size:12.8px;padding:4px 0;font-weight:700"><span>Total Kewajiban</span><span>${fmtRp(totalKW)}${fmtPct(totalKW,totalAsetAll)}</span></div>`;
@@ -16959,7 +16991,7 @@ RENDERERS.neraca = function(c){
     totalMD += totalKep;
     html += `<div style="margin:6px 0 4px">`;
     // rincian tiap akun modal (mis. Ekuitas Saldo Awal, Modal Disetor, Prive, dst) ditampilkan satu per satu
-    html += renderAkunGroupHtml(akunsMD.filter(a=>getSaldo(a)!==0), getSaldo, neracaCollapse, totalAsetAll);
+    html += renderAkunGroupHtml(akunsMD.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), getSaldo, neracaCollapse, totalAsetAll);
     html += `<div style="display:flex;justify-content:space-between;padding:2px 0 2px 10px;font-size:12.8px"><span>Laba Ditahan (akumulasi s.d. tahun lalu)</span><span class="num">${fmtRp(labaDitahan)}${fmtPct(labaDitahan,totalAsetAll)}</span></div>`;
     html += `<div style="display:flex;justify-content:space-between;padding:2px 0 2px 10px;font-size:12.8px"><span>Laba Berjalan (periode tahun berjalan)</span><span class="num">${fmtRp(labaBerjalan)}${fmtPct(labaBerjalan,totalAsetAll)}</span></div>`;
     html += `<div style="display:flex;justify-content:space-between;padding:2px 0 2px 10px;font-size:12.8px"><span>Akumulasi Laba Rugi Komprehensif (PK − BK)</span><span class="num">${fmtRp(labaKomprehensif)}${fmtPct(labaKomprehensif,totalAsetAll)}</span></div>`;
@@ -19383,30 +19415,17 @@ RENDERERS.settings = function(c){
     <div class="formgrid">
       <div class="field"><label>Nama Usaha</label><input id="profilNamaUsaha" placeholder="Nama usaha/toko" value="${escHtml((DB.profil&&DB.profil.namaUsaha)||'')}"></div>
       <div class="field"><label>Logo (PNG/JPG)</label><input type="file" id="profilLogoInput" accept="image/*"></div>
+      <div class="field"><label>Penempatan Logo</label><select id="profilLogoPosisi">
+        <option value="tengah" ${(!DB.profil||!DB.profil.logoPosisi||DB.profil.logoPosisi==='tengah')?'selected':''}>Default (Tengah)</option>
+        <option value="kiri" ${DB.profil&&DB.profil.logoPosisi==='kiri'?'selected':''}>Kiri</option>
+        <option value="kanan" ${DB.profil&&DB.profil.logoPosisi==='kanan'?'selected':''}>Kanan</option>
+      </select></div>
       <div class="field" style="grid-column:1/-1"><label>Alamat</label><textarea id="profilAlamat" placeholder="Alamat lengkap usaha, mis. Kavling DPRD II, Jl Mongindisi No. 16, Sidokidumpuk, Bluru Kidul, Kec. Sidoarjo, Kab. Sidoarjo, Jawa Timur, 61218" rows="3" style="resize:vertical">${escHtml((DB.profil&&DB.profil.alamat)||'')}</textarea></div>
     </div>
     <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
       ${DB.profil&&DB.profil.logoDataUrl? `<img src="${DB.profil.logoDataUrl}" style="width:52px;height:52px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff;padding:2px">` : '<span class="mini">Belum ada logo tersimpan</span>'}
       <button class="btn small primary" id="btnSimpanProfilUsaha">Simpan Profil</button>
       ${DB.profil&&DB.profil.logoDataUrl? '<button class="btn small danger" id="btnHapusLogoUsaha">Hapus Logo</button>':''}
-    </div>
-    <div class="section-title" style="margin-top:18px"><h3>Cover Kustom (Halaman Sampul Laporan Lengkap)</h3></div>
-    <div class="mini" style="margin-bottom:10px;line-height:1.6">Opsional. Upload gambar cover (mis. hasil desain sendiri seperti contoh "FINANCIAL STATEMENT") untuk dipakai sebagai <b>halaman sampul</b> saat mengunduh <b>Laporan Lengkap</b>, menggantikan cover bawaan. Gambar akan memenuhi 1 halaman penuh (mode cover, kelebihan tepi dipotong otomatis), dan teks <b>periode laporan</b> akan ditempel otomatis di posisi yang kamu atur.</div>
-    <div class="formgrid">
-      <div class="field"><label>Gambar Cover (PNG/JPG)</label><input type="file" id="profilCoverInput" accept="image/*"></div>
-      <div class="field"><label>Judul Tambahan (mis. "GIRO PRK")</label><input id="profilCoverJudul" placeholder="Opsional, mis. GIRO PRK" value="${escHtml((DB.profil&&DB.profil.coverJudul)||'')}"></div>
-      <div class="field"><label>Posisi Judul Tambahan (% dari atas)</label><input type="number" id="profilCoverJudulY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.coverJudulY!=null?DB.profil.coverJudulY:48}"></div>
-      <div class="field"><label>Posisi Teks Periode (% dari atas)</label><input type="number" id="profilCoverPeriodeY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.coverPeriodeY!=null?DB.profil.coverPeriodeY:58}"></div>
-      <div class="field"><label>Warna Teks Periode &amp; Judul</label><select id="profilCoverPeriodeColor">
-        <option value="dark" ${(!DB.profil||!DB.profil.coverPeriodeColor||DB.profil.coverPeriodeColor==='dark')?'selected':''}>Gelap (untuk latar terang)</option>
-        <option value="light" ${DB.profil&&DB.profil.coverPeriodeColor==='light'?'selected':''}>Terang (untuk latar gelap)</option>
-      </select></div>
-    </div>
-    <div class="mini" style="margin:2px 0 8px">Contoh: kalau tulisan "FINANCIAL STATEMENT" di gambar cover-mu ada di sekitar tengah halaman, coba isi posisi <b>Judul Tambahan</b> sekitar 46-50% dan <b>Teks Periode</b> sekitar 55-62% supaya keduanya muncul berurutan tepat di bawah judul cover. Teks periode akan otomatis ditampilkan dalam format "Periode &lt;Nama Bulan&gt;" (bukan rentang tanggal).</div>
-    <div style="display:flex;align-items:center;gap:12px;margin-top:6px;flex-wrap:wrap">
-      ${DB.profil&&DB.profil.coverDataUrl? `<img src="${DB.profil.coverDataUrl}" style="width:52px;height:74px;object-fit:cover;border:1px solid var(--line);border-radius:8px;background:#fff">` : '<span class="mini">Belum ada cover kustom — sampul akan pakai desain bawaan</span>'}
-      <button class="btn small primary" id="btnSimpanCoverUsaha">Simpan Cover</button>
-      ${DB.profil&&DB.profil.coverDataUrl? '<button class="btn small danger" id="btnHapusCoverUsaha">Hapus Cover</button>':''}
     </div>
   </div>`;
 
@@ -19564,9 +19583,11 @@ RENDERERS.settings = function(c){
     }));
     const btnSimpanProfilUsaha = document.getElementById('btnSimpanProfilUsaha');
     if(btnSimpanProfilUsaha) btnSimpanProfilUsaha.addEventListener('click', ()=>{
-      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:''};
+      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', logoPosisi:'tengah', alamat:''};
       DB.profil.namaUsaha = document.getElementById('profilNamaUsaha').value.trim();
       DB.profil.alamat = document.getElementById('profilAlamat').value.trim();
+      const posisiSel = document.getElementById('profilLogoPosisi');
+      DB.profil.logoPosisi = (posisiSel && posisiSel.value) || 'tengah';
       const fileInp = document.getElementById('profilLogoInput');
       const file = fileInp && fileInp.files[0];
       if(file){
@@ -19581,36 +19602,6 @@ RENDERERS.settings = function(c){
       DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:''};
       DB.profil.logoDataUrl = ''; save(); toast('Logo dihapus'); renderContent();
     });
-    const btnSimpanCoverUsaha = document.getElementById('btnSimpanCoverUsaha');
-    if(btnSimpanCoverUsaha) btnSimpanCoverUsaha.addEventListener('click', ()=>{
-      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48};
-      let yVal = parseFloat(document.getElementById('profilCoverPeriodeY').value);
-      if(isNaN(yVal)) yVal = 58;
-      yVal = Math.max(0, Math.min(100, yVal));
-      DB.profil.coverPeriodeY = yVal;
-      let judulYVal = parseFloat(document.getElementById('profilCoverJudulY').value);
-      if(isNaN(judulYVal)) judulYVal = 48;
-      judulYVal = Math.max(0, Math.min(100, judulYVal));
-      DB.profil.coverJudulY = judulYVal;
-      DB.profil.coverJudul = document.getElementById('profilCoverJudul').value.trim();
-      DB.profil.coverPeriodeColor = document.getElementById('profilCoverPeriodeColor').value === 'light' ? 'light' : 'dark';
-      const coverInp = document.getElementById('profilCoverInput');
-      const coverFile = coverInp && coverInp.files[0];
-      if(coverFile){
-        // Cover dipakai sebagai gambar 1 halaman penuh (bukan thumbnail kecil seperti logo),
-        // jadi resolusinya dijaga lebih besar (maxSize 1400px) supaya tetap tajam saat dicetak ke PDF.
-        resizeImageToDataUrl(coverFile, 1400, dataUrl=>{
-          if(!dataUrl){ toast('Gagal membaca gambar cover'); return; }
-          DB.profil.coverDataUrl = dataUrl; save(); toast('Cover kustom disimpan'); renderContent();
-        });
-      } else { save(); toast('Pengaturan cover disimpan'); renderContent(); }
-    });
-    const btnHapusCoverUsaha = document.getElementById('btnHapusCoverUsaha');
-    if(btnHapusCoverUsaha) btnHapusCoverUsaha.addEventListener('click', ()=>{
-      DB.profil = DB.profil || {namaUsaha:'', logoDataUrl:'', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48};
-      DB.profil.coverDataUrl = ''; save(); toast('Cover kustom dihapus'); renderContent();
-    });
-
     function bindViewOnlyToggle(wrap, viewClass, editClass, delClass){
       wrap.querySelectorAll('.'+viewClass).forEach(cb=>{
         const row = cb.closest('tr');
@@ -20437,16 +20428,240 @@ function laporanLengkapRiwayatImporHtml(){
     </tbody></table></div>
   </div>`;
 }
+function endOfLastMonthStr(){
+  var d = new Date();
+  // Tanggal 0 dari bulan berjalan = hari terakhir bulan sebelumnya.
+  // PENTING: jangan pakai toISOString() di sini — itu mengonversi ke UTC,
+  // sehingga untuk zona waktu UTC+ (mis. WIB/WITA/WIT) tanggalnya bisa
+  // mundur 1 hari (mis. 31 Agustus jadi kebaca 30 Agustus). Bangun string
+  // dari komponen tanggal LOKAL secara langsung.
+  var akhirBulanLalu = new Date(d.getFullYear(), d.getMonth(), 0);
+  var yyyy = akhirBulanLalu.getFullYear();
+  var mm = String(akhirBulanLalu.getMonth()+1).padStart(2,'0');
+  var dd = String(akhirBulanLalu.getDate()).padStart(2,'0');
+  return yyyy+'-'+mm+'-'+dd;
+}
 let laporanLengkapFilter = {
   neracaTanggal: '',
-  periodeMode: 'bulan_ini',
+  periodeMode: 'bulan_lalu',
   dari: '',
   sampai: '',
-  sections: { neraca:true, labarugi:true, bukubesar:true, jurnal:true }
+  sections: { persetujuan:false, neraca:true, labarugi:true, bukubesar:true, jurnal:true }
 };
+// ---- Sinkronisasi ukuran font preview Cover Kustom dengan PDF asli ----
+// Preview (kotak kecil & modal zoom) sebelumnya pakai ukuran font tetap (9px/8px) yang tidak
+// proporsional dengan halaman A4 sesungguhnya, jadi tampak jauh lebih besar & lebih rapat
+// dibanding hasil PDF Laporan Lengkap yang sebenarnya. Di sini ukuran font preview dihitung
+// SEBAGAI PROPORSI dari lebar halaman PDF asli (595.28pt, A4 potret, unit 'pt' — lihat
+// exportLaporanLengkapPdf) memakai ukuran font yang sama persis dengan yang dipakai saat
+// menggambar teks ke PDF (lihat laporanLengkapDrawCoverImage: judul 20pt, periode 15pt), supaya
+// ukuran & jarak antar teks yang terlihat di preview benar-benar sinkron dengan hasil unduhan.
+const NAMA_BULAN_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const PDF_A4_WIDTH_PT = 595.28;
+const COVER_JUDUL_FONT_PT = 20;
+const COVER_PERIODE_FONT_PT = 15;
+function coverPreviewFontPx(fontPt, boxWidthPx){
+  return (fontPt / PDF_A4_WIDTH_PT) * boxWidthPx;
+}
+// Ukuran font teks Lembar Persetujuan (Periode & Tanggal Pengesahan) di PDF asli — lihat
+// laporanLengkapDrawPersetujuan. Dipakai juga oleh preview supaya proporsinya sinkron dengan PDF,
+// sama seperti pola COVER_JUDUL_FONT_PT/COVER_PERIODE_FONT_PT di atas.
+const LP_PERIODE_FONT_PT = 13;
+const LP_TANGGAL_FONT_PT = 12;
+// Objek default DB.profil — dipusatkan di sini supaya field baru (mis. pengaturan Lembar
+// Persetujuan) tidak perlu diketik ulang di banyak tempat setiap kali dipakai sebagai fallback.
+function defaultProfilObj(){
+  return { namaUsaha:'', logoDataUrl:'', logoPosisi:'tengah', alamat:'', coverDataUrl:'', coverPeriodeY:58, coverPeriodeColor:'dark', coverJudul:'', coverJudulY:48,
+    lpDataUrl:'', lpColor:'dark', lpPeriodeX:50, lpPeriodeY:28, lpPeriodeAlign:'center', lpPeriodeFontSize:LP_PERIODE_FONT_PT,
+    lpTanggalX:70, lpTanggalY:80, lpTanggalAlign:'right', lpTanggalFontSize:LP_TANGGAL_FONT_PT };
+}
+// Ambil ukuran font Periode/Tanggal Pengesahan yang sedang tersimpan di profil, atau nilai
+// bawaan (LP_PERIODE_FONT_PT/LP_TANGGAL_FONT_PT) kalau user belum pernah mengatur sendiri —
+// supaya profil lama (sebelum fitur ukuran font ini ada) tetap tampil sama seperti sebelumnya.
+function lpPeriodeFontPt(){ return (DB.profil && DB.profil.lpPeriodeFontSize!=null && !isNaN(DB.profil.lpPeriodeFontSize)) ? DB.profil.lpPeriodeFontSize : LP_PERIODE_FONT_PT; }
+function lpTanggalFontPt(){ return (DB.profil && DB.profil.lpTanggalFontSize!=null && !isNaN(DB.profil.lpTanggalFontSize)) ? DB.profil.lpTanggalFontSize : LP_TANGGAL_FONT_PT; }
+// Menghitung teks periode cover (mis. "Periode Agustus") berdasarkan filter Laporan Lengkap saat
+// ini — dipakai HANYA untuk preview posisi teks di kartu Cover Kustom (bukan proses export PDF
+// yang sesungguhnya, yang punya perhitungan sendiri di dalam exportLaporanLengkapPdf).
+function laporanLengkapPeriodeTextCoverPreview(f){
+  let dari = null, periodeText = '';
+  if(f.periodeMode==='semua'){
+    periodeText = 'Periode: Semua';
+  } else if(f.periodeMode==='custom'){
+    dari = f.dari || null;
+    periodeText = 'Periode: '+(dari?fmtTgl(dari):'—')+' s/d '+(f.sampai?fmtTgl(f.sampai):'—');
+  } else {
+    const range = dateRangeForMode(f.periodeMode);
+    dari = range[0];
+    periodeText = 'Periode: '+fmtTgl(dari)+' s/d '+fmtTgl(range[1]);
+  }
+  if(dari){
+    const bulanIdx = parseInt(String(dari).slice(5,7), 10) - 1;
+    if(bulanIdx>=0 && bulanIdx<12) return 'Periode '+NAMA_BULAN_ID[bulanIdx];
+  }
+  return periodeText;
+}
+// Menghitung tanggal "dari" (awal periode) dari filter Laporan Lengkap saat ini — dipakai untuk
+// teks periode Lembar Persetujuan (format "BULAN TAHUN", mis. "JULI 2026"). Sama logikanya dengan
+// bagian awal laporanLengkapPeriodeTextCoverPreview, dipisah supaya bisa dipakai ulang.
+function laporanLengkapDariTanggal(f){
+  if(f.periodeMode==='semua') return f.dari || null;
+  if(f.periodeMode==='custom') return f.dari || null;
+  const range = dateRangeForMode(f.periodeMode);
+  return range[0];
+}
+// Teks periode Lembar Persetujuan, format "BULAN TAHUN" huruf besar (mis. "JULI 2026") — otomatis
+// ikut Periode Laba Rugi/Buku Besar/Jurnal Umum yang dipilih di form Laporan Lengkap.
+function lpPeriodeText(f){
+  const dari = laporanLengkapDariTanggal(f);
+  if(!dari) return '';
+  const m = String(dari).match(/^(\d{4})-(\d{2})/);
+  if(!m) return '';
+  const bulanIdx = parseInt(m[2], 10) - 1;
+  if(bulanIdx<0 || bulanIdx>11) return '';
+  return (NAMA_BULAN_ID[bulanIdx]+' '+m[1]).toUpperCase();
+}
+// Teks tanggal pengesahan Lembar Persetujuan, format "DD NamaBulan YYYY" (mis. "04 Agustus 2026")
+// — otomatis ikut tanggal saat PDF diunduh/di-preview (hari ini).
+function lpTanggalPengesahanText(){
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  return dd+' '+NAMA_BULAN_ID[d.getMonth()]+' '+d.getFullYear();
+}
+// Modal untuk memperbesar preview cover kustom (dipanggil saat kotak preview di kartu Cover
+// Kustom diklik). Ukuran kotak di dalam modal mengikuti rasio halaman A4 potret (210x297mm) —
+// rasio yang sama dipakai saat cover ini digambar ke PDF Laporan Lengkap — supaya posisi &
+// proporsi teks yang terlihat lebih mendekati hasil unduhan sebenarnya.
+function openCoverPreviewZoomModal(){
+  const smallImg = document.getElementById('coverPreviewImg');
+  const hasImg = !!(smallImg && smallImg.style.display!=='none' && smallImg.src);
+  const judulInp = document.getElementById('profilCoverJudul');
+  const judulYInp = document.getElementById('profilCoverJudulY');
+  const periodeYInp = document.getElementById('profilCoverPeriodeY');
+  const colorInp = document.getElementById('profilCoverPeriodeColor');
+  const periodeSmall = document.getElementById('coverPreviewPeriode');
+  const judulTxt = (judulInp && judulInp.value || '').trim();
+  let judulY = parseFloat(judulYInp && judulYInp.value); if(isNaN(judulY)) judulY = 48; judulY = Math.max(0, Math.min(100, judulY));
+  let periodeY = parseFloat(periodeYInp && periodeYInp.value); if(isNaN(periodeY)) periodeY = 58; periodeY = Math.max(0, Math.min(100, periodeY));
+  const colorCss = (colorInp && colorInp.value==='light') ? '#fff' : '#282828';
+  const periodeTxt = periodeSmall ? periodeSmall.textContent : '';
+
+  let modal = document.getElementById('coverZoomModal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'coverZoomModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(30,25,20,.75);z-index:120;display:flex;align-items:center;justify-content:center;padding:24px';
+    modal.innerHTML = `<div style="background:var(--paper);color:var(--ink);border-radius:14px;padding:14px;max-width:92vw;max-height:92vh;overflow:auto;text-align:center">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px"><b>Preview Cover (Rasio Halaman A4)</b><button class="btn small" id="coverZoomModalClose">✕ Tutup</button></div>
+      <div id="coverZoomBox" style="position:relative;margin:0 auto;background:#e8e4dc;border-radius:8px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.25)">
+        <img id="coverZoomImg" style="width:100%;height:100%;object-fit:cover;display:none">
+        <div id="coverZoomEmpty" class="mini" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;color:#8a8378">Belum ada gambar</div>
+        <div id="coverZoomJudul" style="position:absolute;left:4%;right:4%;transform:translateY(-50%);text-align:center;font-weight:700;word-break:break-word;display:none"></div>
+        <div id="coverZoomPeriode" style="position:absolute;left:4%;right:4%;transform:translateY(-50%);text-align:center;font-weight:700"></div>
+      </div>
+      <div class="mini" style="margin-top:10px;color:var(--ink-soft)">Perkiraan tampilan mengikuti proporsi halaman A4 pada PDF Laporan Lengkap.</div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+    modal.querySelector('#coverZoomModalClose').addEventListener('click', ()=>modal.remove());
+  }
+  // Ukuran font dihitung langsung sebagai proporsi dari lebar halaman PDF asli (lihat
+  // coverPreviewFontPx) berdasarkan zoomWidth saat ini, supaya ukuran & jarak antar teks ikut
+  // membesar secara proporsional saat di-zoom dan tetap sinkron dengan hasil PDF sesungguhnya.
+  const zoomWidth = Math.min(window.innerWidth*0.8, 420);
+  const zoomHeight = zoomWidth * (297/210);
+  const box = modal.querySelector('#coverZoomBox');
+  box.style.width = zoomWidth+'px';
+  box.style.height = zoomHeight+'px';
+  const zImg = modal.querySelector('#coverZoomImg');
+  const zEmpty = modal.querySelector('#coverZoomEmpty');
+  if(hasImg){ zImg.src = smallImg.src; zImg.style.display='block'; zEmpty.style.display='none'; }
+  else { zImg.style.display='none'; zEmpty.style.display='flex'; }
+  const zJudul = modal.querySelector('#coverZoomJudul');
+  zJudul.textContent = judulTxt;
+  zJudul.style.display = judulTxt ? 'block' : 'none';
+  zJudul.style.top = judulY+'%';
+  zJudul.style.color = colorCss;
+  zJudul.style.fontSize = coverPreviewFontPx(COVER_JUDUL_FONT_PT, zoomWidth)+'px';
+  const zPeriode = modal.querySelector('#coverZoomPeriode');
+  zPeriode.textContent = periodeTxt;
+  zPeriode.style.top = periodeY+'%';
+  zPeriode.style.color = colorCss;
+  zPeriode.style.fontSize = coverPreviewFontPx(COVER_PERIODE_FONT_PT, zoomWidth)+'px';
+}
+// Modal zoom untuk preview Lembar Persetujuan — polanya sama dengan openCoverPreviewZoomModal,
+// bedanya di sini ADA 2 teks yang masing-masing punya posisi X/Y & perataan sendiri (bukan cuma Y
+// dengan rata tengah seperti Cover), jadi posisi & ukuran fontnya dihitung ulang tiap teks.
+function openLpPreviewZoomModal(){
+  const smallImg = document.getElementById('lpPreviewImg');
+  const hasImg = !!(smallImg && smallImg.style.display!=='none' && smallImg.src);
+  const clamp = v=> Math.max(0, Math.min(100, isNaN(v)?50:v));
+  const periodeX = clamp(parseFloat(document.getElementById('profilLpPeriodeX').value));
+  const periodeY = clamp(parseFloat(document.getElementById('profilLpPeriodeY').value));
+  const periodeAlign = document.getElementById('profilLpPeriodeAlign').value || 'center';
+  const tanggalX = clamp(parseFloat(document.getElementById('profilLpTanggalX').value));
+  const tanggalY = clamp(parseFloat(document.getElementById('profilLpTanggalY').value));
+  const tanggalAlign = document.getElementById('profilLpTanggalAlign').value || 'right';
+  let periodeFontPt = parseFloat(document.getElementById('profilLpPeriodeFontSize').value); if(isNaN(periodeFontPt) || periodeFontPt<=0) periodeFontPt = LP_PERIODE_FONT_PT;
+  let tanggalFontPt = parseFloat(document.getElementById('profilLpTanggalFontSize').value); if(isNaN(tanggalFontPt) || tanggalFontPt<=0) tanggalFontPt = LP_TANGGAL_FONT_PT;
+  const colorCss = (document.getElementById('profilLpColor').value==='light') ? '#fff' : '#282828';
+  const periodeSmall = document.getElementById('lpPreviewPeriode');
+  const tanggalSmall = document.getElementById('lpPreviewTanggal');
+  const periodeTxt = periodeSmall ? periodeSmall.textContent : '';
+  const tanggalTxt = tanggalSmall ? tanggalSmall.textContent : '';
+
+  let modal = document.getElementById('lpZoomModal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'lpZoomModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(30,25,20,.75);z-index:120;display:flex;align-items:center;justify-content:center;padding:24px';
+    modal.innerHTML = `<div style="background:var(--paper);color:var(--ink);border-radius:14px;padding:14px;max-width:92vw;max-height:92vh;overflow:auto;text-align:center">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px"><b>Preview Lembar Persetujuan (Rasio Halaman A4)</b><button class="btn small" id="lpZoomModalClose">✕ Tutup</button></div>
+      <div id="lpZoomBox" style="position:relative;margin:0 auto;background:#e8e4dc;border-radius:8px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.25)">
+        <img id="lpZoomImg" style="width:100%;height:100%;object-fit:cover;display:none">
+        <div id="lpZoomEmpty" class="mini" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;color:#8a8378">Belum ada gambar</div>
+        <div id="lpZoomPeriode" style="position:absolute;font-weight:700;white-space:nowrap"></div>
+        <div id="lpZoomTanggal" style="position:absolute;font-weight:700;white-space:nowrap"></div>
+      </div>
+      <div class="mini" style="margin-top:10px;color:var(--ink-soft)">Perkiraan tampilan mengikuti proporsi halaman A4 pada PDF Laporan Lengkap.</div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+    modal.querySelector('#lpZoomModalClose').addEventListener('click', ()=>modal.remove());
+  }
+  const zoomWidth = Math.min(window.innerWidth*0.8, 420);
+  const zoomHeight = zoomWidth * (297/210);
+  const box = modal.querySelector('#lpZoomBox');
+  box.style.width = zoomWidth+'px';
+  box.style.height = zoomHeight+'px';
+  const zImg = modal.querySelector('#lpZoomImg');
+  const zEmpty = modal.querySelector('#lpZoomEmpty');
+  if(hasImg){ zImg.src = smallImg.src; zImg.style.display='block'; zEmpty.style.display='none'; }
+  else { zImg.style.display='none'; zEmpty.style.display='flex'; }
+
+  // Menempatkan tiap teks di kotak zoom persis dengan logika yang sama dipakai di preview kecil
+  // (lihat markup lpPreviewPeriode/lpPreviewTanggal & updateLpPreviewFromInputs) — posisi X (%)
+  // selalu jadi titik acuan (align kiri/kanan/tengah cuma menentukan sisi mana dari teks yang
+  // ditempel di titik itu), sama seperti doc.text(..., {align}) di jsPDF.
+  const applyZoomPos = (el, xPct, yPct, align, text, fontPt)=>{
+    el.textContent = text;
+    el.style.display = text ? 'block' : 'none';
+    el.style.top = yPct+'%';
+    el.style.left = xPct+'%';
+    el.style.right = '';
+    el.style.color = colorCss;
+    el.style.fontSize = coverPreviewFontPx(fontPt, zoomWidth)+'px';
+    el.style.textAlign = align;
+    if(align==='left'){ el.style.transform = 'translate(0,-50%)'; }
+    else if(align==='right'){ el.style.transform = 'translate(-100%,-50%)'; }
+    else { el.style.transform = 'translate(-50%,-50%)'; }
+  };
+  applyZoomPos(modal.querySelector('#lpZoomPeriode'), periodeX, periodeY, periodeAlign, periodeTxt, periodeFontPt);
+  applyZoomPos(modal.querySelector('#lpZoomTanggal'), tanggalX, tanggalY, tanggalAlign, tanggalTxt, tanggalFontPt);
+}
 RENDERERS.laporanlengkap = function(c){
   const f = laporanLengkapFilter;
-  const neracaTgl = f.neracaTanggal || todayStr();
+  const neracaTgl = f.neracaTanggal || endOfLastMonthStr();
   const showCustom = f.periodeMode==='custom';
   c.innerHTML = `<div class="card" style="margin-bottom:14px">
     <div class="section-title"><h3>Impor Buku Besar (Semua Akun)</h3></div>
@@ -20460,7 +20675,7 @@ RENDERERS.laporanlengkap = function(c){
   </div>
   <div class="card">
     <div class="section-title"><h3>Laporan Lengkap</h3></div>
-    <div class="mini" style="margin:-4px 0 10px">Gabungkan beberapa laporan jadi <b>satu file PDF</b>: cover, daftar isi, Neraca, Laba Rugi, Buku Besar &amp; Jurnal Umum. Semua halaman diberi nomor halaman berurutan (mis. "Halaman 3 dari 12").</div>
+    <div class="mini" style="margin:-4px 0 10px">Gabungkan beberapa laporan jadi <b>satu file PDF</b>: cover, lembar persetujuan (opsional), daftar isi, Neraca, Laba Rugi, Buku Besar &amp; Jurnal Umum. Semua halaman diberi nomor halaman berurutan (mis. "Halaman 3 dari 12").</div>
     <div class="formgrid">
       <div class="field"><label>Neraca — Per Tanggal</label><input type="date" id="llNeracaTgl" value="${neracaTgl}"></div>
       <div class="field"><label>Periode Laba Rugi / Buku Besar / Jurnal Umum</label><select id="llPeriodeMode">
@@ -20471,17 +20686,91 @@ RENDERERS.laporanlengkap = function(c){
     </div>
     <div class="mini" style="margin:14px 0 6px"><b>Bagian yang disertakan:</b></div>
     <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="llSecPersetujuan" ${f.sections.persetujuan?'checked':''}> Lembar Persetujuan</label>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="llSecNeraca" ${f.sections.neraca?'checked':''}> Neraca</label>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="llSecLabaRugi" ${f.sections.labarugi?'checked':''}> Laba Rugi</label>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="llSecBukuBesar" ${f.sections.bukubesar?'checked':''}> Buku Besar (semua akun)</label>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="llSecJurnal" ${f.sections.jurnal?'checked':''}> Jurnal Umum</label>
     </div>
     <div style="margin-top:16px"><button class="btn primary" id="llBtnGo" type="button">⬇ Unduh Laporan Lengkap (PDF)</button></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="section-title"><h3>Cover Kustom (Halaman Sampul Laporan Lengkap)</h3></div>
+    <div class="mini" style="margin-bottom:10px;line-height:1.6">Opsional. Upload gambar cover (mis. hasil desain sendiri seperti contoh "FINANCIAL STATEMENT") untuk dipakai sebagai <b>halaman sampul</b> saat mengunduh <b>Laporan Lengkap</b>, menggantikan cover bawaan. Gambar akan memenuhi 1 halaman penuh (mode cover, kelebihan tepi dipotong otomatis), dan teks <b>periode laporan</b> akan ditempel otomatis di posisi yang kamu atur.</div>
+    <div class="formgrid">
+      <div class="field"><label>Gambar Cover (PNG/JPG)</label><input type="file" id="profilCoverInput" accept="image/*"></div>
+      <div class="field"><label>Judul Tambahan (mis. "GIRO PRK")</label><input id="profilCoverJudul" placeholder="Opsional, mis. GIRO PRK" value="${escHtml((DB.profil&&DB.profil.coverJudul)||'')}"></div>
+      <div class="field"><label>Posisi Judul Tambahan (% dari atas)</label><input type="number" id="profilCoverJudulY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.coverJudulY!=null?DB.profil.coverJudulY:48}"></div>
+      <div class="field"><label>Posisi Teks Periode (% dari atas)</label><input type="number" id="profilCoverPeriodeY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.coverPeriodeY!=null?DB.profil.coverPeriodeY:58}"></div>
+      <div class="field"><label>Warna Teks Periode &amp; Judul</label><select id="profilCoverPeriodeColor">
+        <option value="dark" ${(!DB.profil||!DB.profil.coverPeriodeColor||DB.profil.coverPeriodeColor==='dark')?'selected':''}>Gelap (untuk latar terang)</option>
+        <option value="light" ${DB.profil&&DB.profil.coverPeriodeColor==='light'?'selected':''}>Terang (untuk latar gelap)</option>
+      </select></div>
+    </div>
+    <div class="mini" style="margin:2px 0 8px">Contoh: kalau tulisan "FINANCIAL STATEMENT" di gambar cover-mu ada di sekitar tengah halaman, coba isi posisi <b>Judul Tambahan</b> sekitar 46-50% dan <b>Teks Periode</b> sekitar 55-62% supaya keduanya muncul berurutan tepat di bawah judul cover. Teks periode akan otomatis ditampilkan dalam format "Periode &lt;Nama Bulan&gt;" (bukan rentang tanggal).</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:6px;flex-wrap:wrap">
+      <div id="coverPreviewBox" title="Klik untuk perbesar sesuai rasio halaman PDF" style="position:relative;width:80px;height:113px;flex-shrink:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#e8e4dc;cursor:zoom-in">
+        <img id="coverPreviewImg" src="${(DB.profil&&DB.profil.coverDataUrl)||''}" style="width:100%;height:100%;object-fit:cover;display:${DB.profil&&DB.profil.coverDataUrl?'block':'none'}">
+        <div id="coverPreviewEmpty" class="mini" style="position:absolute;inset:0;display:${DB.profil&&DB.profil.coverDataUrl?'none':'flex'};align-items:center;justify-content:center;text-align:center;font-size:9px;padding:4px;line-height:1.2;color:#8a8378">Belum ada gambar</div>
+        <div id="coverPreviewJudul" style="position:absolute;left:2px;right:2px;top:${DB.profil&&DB.profil.coverJudulY!=null?DB.profil.coverJudulY:48}%;transform:translateY(-50%);text-align:center;font-size:${coverPreviewFontPx(COVER_JUDUL_FONT_PT,80).toFixed(2)}px;font-weight:700;line-height:1.15;word-break:break-word;color:${(!DB.profil||!DB.profil.coverPeriodeColor||DB.profil.coverPeriodeColor==='dark')?'#282828':'#fff'};display:${DB.profil&&DB.profil.coverJudul?'block':'none'}">${escHtml((DB.profil&&DB.profil.coverJudul)||'')}</div>
+        <div id="coverPreviewPeriode" style="position:absolute;left:2px;right:2px;top:${DB.profil&&DB.profil.coverPeriodeY!=null?DB.profil.coverPeriodeY:58}%;transform:translateY(-50%);text-align:center;font-size:${coverPreviewFontPx(COVER_PERIODE_FONT_PT,80).toFixed(2)}px;font-weight:700;line-height:1.15;color:${(!DB.profil||!DB.profil.coverPeriodeColor||DB.profil.coverPeriodeColor==='dark')?'#282828':'#fff'}">${escHtml(laporanLengkapPeriodeTextCoverPreview(f))}</div>
+        <div style="position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.45);color:#fff;border-radius:5px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:10px;pointer-events:none">🔍</div>
+      </div>
+      <button class="btn small primary" id="btnSimpanCoverUsaha">Simpan Cover</button>
+      ${DB.profil&&DB.profil.coverDataUrl? '<button class="btn small danger" id="btnHapusCoverUsaha">Hapus Cover</button>':''}
+    </div>
+    <div class="mini" style="margin-top:6px;color:var(--ink-soft)">Preview di kiri tombol Simpan Cover otomatis mengikuti gambar & pengaturan yang sedang kamu isi (posisi &amp; warna teks), supaya kesesuaiannya bisa dicek dulu tanpa perlu unduh PDF-nya. Klik gambar preview untuk memperbesarnya sesuai rasio halaman PDF yang sebenarnya.</div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="section-title"><h3>Lembar Persetujuan (Kustom) — Halaman Setelah Cover</h3></div>
+    <div class="mini" style="margin-bottom:10px;line-height:1.6">Opsional. Upload gambar background (mis. desain "LEMBAR PERSETUJUAN LAPORAN KEUANGAN") untuk dijadikan halaman ke-2, tepat setelah Cover, saat mengunduh <b>Laporan Lengkap</b> (aktifkan lewat centang <b>Lembar Persetujuan</b> di atas). Gambar memenuhi 1 halaman penuh (mode cover), lalu 2 teks berikut ditempel otomatis di posisi yang kamu atur: <b>teks Periode</b> (format "BULAN TAHUN", mis. "JULI 2026", mengikuti Periode yang dipilih di atas) dan <b>teks Tanggal Pengesahan</b> (mis. "04 Agustus 2026", otomatis ikut tanggal saat PDF diunduh).</div>
+    <div class="formgrid">
+      <div class="field"><label>Gambar Background (PNG/JPG)</label><input type="file" id="profilLpInput" accept="image/*"></div>
+      <div class="field"><label>Warna Teks</label><select id="profilLpColor">
+        <option value="dark" ${(!DB.profil||!DB.profil.lpColor||DB.profil.lpColor==='dark')?'selected':''}>Gelap (untuk latar terang)</option>
+        <option value="light" ${DB.profil&&DB.profil.lpColor==='light'?'selected':''}>Terang (untuk latar gelap)</option>
+      </select></div>
+    </div>
+    <div class="mini" style="font-weight:700;margin:12px 0 4px">Posisi Teks Periode (mis. "JULI 2026")</div>
+    <div class="formgrid">
+      <div class="field"><label>Posisi Horizontal (% dari kiri)</label><input type="number" id="profilLpPeriodeX" min="0" max="100" step="1" value="${DB.profil&&DB.profil.lpPeriodeX!=null?DB.profil.lpPeriodeX:50}"></div>
+      <div class="field"><label>Posisi Vertikal (% dari atas)</label><input type="number" id="profilLpPeriodeY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.lpPeriodeY!=null?DB.profil.lpPeriodeY:28}"></div>
+      <div class="field"><label>Perataan</label><select id="profilLpPeriodeAlign">
+        <option value="left" ${DB.profil&&DB.profil.lpPeriodeAlign==='left'?'selected':''}>Kiri</option>
+        <option value="center" ${(!DB.profil||!DB.profil.lpPeriodeAlign||DB.profil.lpPeriodeAlign==='center')?'selected':''}>Tengah</option>
+        <option value="right" ${DB.profil&&DB.profil.lpPeriodeAlign==='right'?'selected':''}>Kanan</option>
+      </select></div>
+      <div class="field"><label>Ukuran Font (pt)</label><input type="number" id="profilLpPeriodeFontSize" min="6" max="60" step="0.5" value="${lpPeriodeFontPt()}"></div>
+    </div>
+    <div class="mini" style="font-weight:700;margin:12px 0 4px">Posisi Teks Tanggal Pengesahan (mis. "04 Agustus 2026")</div>
+    <div class="formgrid">
+      <div class="field"><label>Posisi Horizontal (% dari kiri)</label><input type="number" id="profilLpTanggalX" min="0" max="100" step="1" value="${DB.profil&&DB.profil.lpTanggalX!=null?DB.profil.lpTanggalX:70}"></div>
+      <div class="field"><label>Posisi Vertikal (% dari atas)</label><input type="number" id="profilLpTanggalY" min="0" max="100" step="1" value="${DB.profil&&DB.profil.lpTanggalY!=null?DB.profil.lpTanggalY:80}"></div>
+      <div class="field"><label>Perataan</label><select id="profilLpTanggalAlign">
+        <option value="left" ${DB.profil&&DB.profil.lpTanggalAlign==='left'?'selected':''}>Kiri</option>
+        <option value="center" ${DB.profil&&DB.profil.lpTanggalAlign==='center'?'selected':''}>Tengah</option>
+        <option value="right" ${(!DB.profil||!DB.profil.lpTanggalAlign||DB.profil.lpTanggalAlign==='right')?'selected':''}>Kanan</option>
+      </select></div>
+      <div class="field"><label>Ukuran Font (pt)</label><input type="number" id="profilLpTanggalFontSize" min="6" max="60" step="0.5" value="${lpTanggalFontPt()}"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap">
+      <div id="lpPreviewBox" title="Klik untuk perbesar sesuai rasio halaman PDF" style="position:relative;width:80px;height:113px;flex-shrink:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#e8e4dc;cursor:zoom-in">
+        <img id="lpPreviewImg" src="${(DB.profil&&DB.profil.lpDataUrl)||''}" style="width:100%;height:100%;object-fit:cover;display:${DB.profil&&DB.profil.lpDataUrl?'block':'none'}">
+        <div id="lpPreviewEmpty" class="mini" style="position:absolute;inset:0;display:${DB.profil&&DB.profil.lpDataUrl?'none':'flex'};align-items:center;justify-content:center;text-align:center;font-size:9px;padding:4px;line-height:1.2;color:#8a8378">Belum ada gambar</div>
+        <div id="lpPreviewPeriode" style="position:absolute;left:${DB.profil&&DB.profil.lpPeriodeX!=null?DB.profil.lpPeriodeX:50}%;transform:${(DB.profil&&DB.profil.lpPeriodeAlign)==='left'?'translate(0,-50%)':(DB.profil&&DB.profil.lpPeriodeAlign)==='right'?'translate(-100%,-50%)':'translate(-50%,-50%)'};top:${DB.profil&&DB.profil.lpPeriodeY!=null?DB.profil.lpPeriodeY:28}%;text-align:${(DB.profil&&DB.profil.lpPeriodeAlign)||'center'};font-size:${coverPreviewFontPx(lpPeriodeFontPt(),80).toFixed(2)}px;font-weight:700;line-height:1.15;white-space:nowrap;color:${(!DB.profil||!DB.profil.lpColor||DB.profil.lpColor==='dark')?'#282828':'#fff'}">${escHtml(lpPeriodeText(f))}</div>
+        <div id="lpPreviewTanggal" style="position:absolute;left:${DB.profil&&DB.profil.lpTanggalX!=null?DB.profil.lpTanggalX:70}%;transform:${(DB.profil&&DB.profil.lpTanggalAlign)==='left'?'translate(0,-50%)':(DB.profil&&DB.profil.lpTanggalAlign)==='right'?'translate(-100%,-50%)':'translate(-50%,-50%)'};top:${DB.profil&&DB.profil.lpTanggalY!=null?DB.profil.lpTanggalY:80}%;text-align:${(DB.profil&&DB.profil.lpTanggalAlign)||'right'};font-size:${coverPreviewFontPx(lpTanggalFontPt(),80).toFixed(2)}px;font-weight:700;line-height:1.15;white-space:nowrap;color:${(!DB.profil||!DB.profil.lpColor||DB.profil.lpColor==='dark')?'#282828':'#fff'}">${escHtml(lpTanggalPengesahanText())}</div>
+        <div style="position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.45);color:#fff;border-radius:5px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:10px;pointer-events:none">🔍</div>
+      </div>
+      <button class="btn small primary" id="btnSimpanLp">Simpan Lembar Persetujuan</button>
+      ${DB.profil&&DB.profil.lpDataUrl? '<button class="btn small danger" id="btnHapusLp">Hapus Gambar</button>':''}
+    </div>
+    <div class="mini" style="margin-top:6px;color:var(--ink-soft)">Preview di kiri tombol Simpan otomatis mengikuti gambar & pengaturan yang sedang kamu isi. Kedua teks (Periode & Tanggal Pengesahan) dibuat otomatis dan tidak perlu diketik manual — cukup atur posisinya saja. Klik gambar preview untuk memperbesarnya sesuai rasio halaman PDF yang sebenarnya.</div>
   </div>`;
   document.getElementById('llNeracaTgl').addEventListener('change', e=>{ f.neracaTanggal = e.target.value; });
   document.getElementById('llPeriodeMode').addEventListener('change', e=>{ f.periodeMode = e.target.value; renderContent(); });
   const llDariEl = document.getElementById('llDari'); if(llDariEl) llDariEl.addEventListener('change', e=>{ f.dari = e.target.value; });
   const llSampaiEl = document.getElementById('llSampai'); if(llSampaiEl) llSampaiEl.addEventListener('change', e=>{ f.sampai = e.target.value; });
+  document.getElementById('llSecPersetujuan').addEventListener('change', e=>{ f.sections.persetujuan = e.target.checked; });
   document.getElementById('llSecNeraca').addEventListener('change', e=>{ f.sections.neraca = e.target.checked; });
   document.getElementById('llSecLabaRugi').addEventListener('change', e=>{ f.sections.labarugi = e.target.checked; });
   document.getElementById('llSecBukuBesar').addEventListener('change', e=>{ f.sections.bukubesar = e.target.checked; });
@@ -20503,6 +20792,146 @@ RENDERERS.laporanlengkap = function(c){
   });
   document.querySelectorAll('.btnHapusRiwayatImporBB').forEach(btn=>{
     btn.addEventListener('click', ()=> hapusRiwayatImporBukuBesar(btn.dataset.id));
+  });
+  const coverPreviewBoxEl = document.getElementById('coverPreviewBox');
+  if(coverPreviewBoxEl) coverPreviewBoxEl.addEventListener('click', openCoverPreviewZoomModal);
+  const lpPreviewBoxEl = document.getElementById('lpPreviewBox');
+  if(lpPreviewBoxEl) lpPreviewBoxEl.addEventListener('click', openLpPreviewZoomModal);
+  function updateCoverPreviewFromInputs(){
+    const judulEl = document.getElementById('coverPreviewJudul');
+    const periodeEl = document.getElementById('coverPreviewPeriode');
+    if(!judulEl || !periodeEl) return;
+    const judulTxt = (document.getElementById('profilCoverJudul').value||'').trim();
+    let judulY = parseFloat(document.getElementById('profilCoverJudulY').value); if(isNaN(judulY)) judulY = 48; judulY = Math.max(0, Math.min(100, judulY));
+    let periodeY = parseFloat(document.getElementById('profilCoverPeriodeY').value); if(isNaN(periodeY)) periodeY = 58; periodeY = Math.max(0, Math.min(100, periodeY));
+    const colorCss = document.getElementById('profilCoverPeriodeColor').value==='light' ? '#fff' : '#282828';
+    judulEl.textContent = judulTxt;
+    judulEl.style.display = judulTxt ? 'block' : 'none';
+    judulEl.style.top = judulY+'%';
+    judulEl.style.color = colorCss;
+    periodeEl.style.top = periodeY+'%';
+    periodeEl.style.color = colorCss;
+  }
+  ['profilCoverJudul','profilCoverJudulY','profilCoverPeriodeY'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', updateCoverPreviewFromInputs);
+  });
+  const profilCoverPeriodeColorEl = document.getElementById('profilCoverPeriodeColor');
+  if(profilCoverPeriodeColorEl) profilCoverPeriodeColorEl.addEventListener('change', updateCoverPreviewFromInputs);
+  const profilCoverInputEl = document.getElementById('profilCoverInput');
+  if(profilCoverInputEl) profilCoverInputEl.addEventListener('change', e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      const imgEl = document.getElementById('coverPreviewImg');
+      const emptyEl = document.getElementById('coverPreviewEmpty');
+      if(imgEl){ imgEl.src = ev.target.result; imgEl.style.display = 'block'; }
+      if(emptyEl) emptyEl.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  });
+  const btnSimpanCoverUsaha = document.getElementById('btnSimpanCoverUsaha');
+  if(btnSimpanCoverUsaha) btnSimpanCoverUsaha.addEventListener('click', ()=>{
+    DB.profil = DB.profil || defaultProfilObj();
+    let yVal = parseFloat(document.getElementById('profilCoverPeriodeY').value);
+    if(isNaN(yVal)) yVal = 58;
+    yVal = Math.max(0, Math.min(100, yVal));
+    DB.profil.coverPeriodeY = yVal;
+    let judulYVal = parseFloat(document.getElementById('profilCoverJudulY').value);
+    if(isNaN(judulYVal)) judulYVal = 48;
+    judulYVal = Math.max(0, Math.min(100, judulYVal));
+    DB.profil.coverJudulY = judulYVal;
+    DB.profil.coverJudul = document.getElementById('profilCoverJudul').value.trim();
+    DB.profil.coverPeriodeColor = document.getElementById('profilCoverPeriodeColor').value === 'light' ? 'light' : 'dark';
+    const coverInp = document.getElementById('profilCoverInput');
+    const coverFile = coverInp && coverInp.files[0];
+    if(coverFile){
+      // Cover dipakai sebagai gambar 1 halaman penuh (bukan thumbnail kecil seperti logo),
+      // jadi resolusinya dijaga lebih besar (maxSize 1400px) supaya tetap tajam saat dicetak ke PDF.
+      resizeImageToDataUrl(coverFile, 1400, dataUrl=>{
+        if(!dataUrl){ toast('Gagal membaca gambar cover'); return; }
+        DB.profil.coverDataUrl = dataUrl; save(); toast('Cover kustom disimpan'); renderContent();
+      });
+    } else { save(); toast('Pengaturan cover disimpan'); renderContent(); }
+  });
+  const btnHapusCoverUsaha = document.getElementById('btnHapusCoverUsaha');
+  if(btnHapusCoverUsaha) btnHapusCoverUsaha.addEventListener('click', ()=>{
+    DB.profil = DB.profil || defaultProfilObj();
+    DB.profil.coverDataUrl = ''; save(); toast('Cover kustom dihapus'); renderContent();
+  });
+  const profilLpInputEl = document.getElementById('profilLpInput');
+  if(profilLpInputEl) profilLpInputEl.addEventListener('change', e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      const imgEl = document.getElementById('lpPreviewImg');
+      const emptyEl = document.getElementById('lpPreviewEmpty');
+      if(imgEl){ imgEl.src = ev.target.result; imgEl.style.display = 'block'; }
+      if(emptyEl) emptyEl.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  });
+  function updateLpPreviewFromInputs(){
+    const periodeEl = document.getElementById('lpPreviewPeriode');
+    const tanggalEl = document.getElementById('lpPreviewTanggal');
+    if(!periodeEl || !tanggalEl) return;
+    const colorCss = document.getElementById('profilLpColor').value==='light' ? '#fff' : '#282828';
+    const applyPos = (el, xId, yId, alignId, fontSizeId, fontDefault)=>{
+      let x = parseFloat(document.getElementById(xId).value); if(isNaN(x)) x = 50; x = Math.max(0, Math.min(100, x));
+      let y = parseFloat(document.getElementById(yId).value); if(isNaN(y)) y = 50; y = Math.max(0, Math.min(100, y));
+      const align = document.getElementById(alignId).value;
+      let fontPt = parseFloat(document.getElementById(fontSizeId).value); if(isNaN(fontPt) || fontPt<=0) fontPt = fontDefault;
+      el.style.top = y+'%';
+      el.style.textAlign = align;
+      // Posisi X (% dari kiri) SELALU dipakai sebagai titik acuan, sama seperti logika jsPDF
+      // (doc.text dengan opsi align) di laporanLengkapDrawPersetujuan — supaya preview di sini
+      // benar-benar sinkron dengan hasil PDF, bukan cuma nempel 2px di tepi saat align kiri/kanan.
+      el.style.left = x+'%';
+      el.style.right = '';
+      if(align==='left'){ el.style.transform = 'translate(0,-50%)'; }
+      else if(align==='right'){ el.style.transform = 'translate(-100%,-50%)'; }
+      else { el.style.transform = 'translate(-50%,-50%)'; }
+      el.style.color = colorCss;
+      el.style.fontSize = coverPreviewFontPx(fontPt, 80).toFixed(2)+'px';
+    };
+    applyPos(periodeEl, 'profilLpPeriodeX', 'profilLpPeriodeY', 'profilLpPeriodeAlign', 'profilLpPeriodeFontSize', LP_PERIODE_FONT_PT);
+    applyPos(tanggalEl, 'profilLpTanggalX', 'profilLpTanggalY', 'profilLpTanggalAlign', 'profilLpTanggalFontSize', LP_TANGGAL_FONT_PT);
+  }
+  ['profilLpPeriodeX','profilLpPeriodeY','profilLpPeriodeAlign','profilLpPeriodeFontSize','profilLpTanggalX','profilLpTanggalY','profilLpTanggalAlign','profilLpTanggalFontSize'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', updateLpPreviewFromInputs);
+  });
+  const profilLpColorEl = document.getElementById('profilLpColor');
+  if(profilLpColorEl) profilLpColorEl.addEventListener('change', updateLpPreviewFromInputs);
+  const btnSimpanLp = document.getElementById('btnSimpanLp');
+  if(btnSimpanLp) btnSimpanLp.addEventListener('click', ()=>{
+    DB.profil = DB.profil || defaultProfilObj();
+    const clamp = v=> Math.max(0, Math.min(100, isNaN(v)?50:v));
+    const clampFont = (v, def)=>{ v = parseFloat(v); return (isNaN(v) || v<=0) ? def : Math.max(6, Math.min(60, v)); };
+    DB.profil.lpPeriodeX = clamp(parseFloat(document.getElementById('profilLpPeriodeX').value));
+    DB.profil.lpPeriodeY = clamp(parseFloat(document.getElementById('profilLpPeriodeY').value));
+    DB.profil.lpPeriodeAlign = document.getElementById('profilLpPeriodeAlign').value;
+    DB.profil.lpPeriodeFontSize = clampFont(document.getElementById('profilLpPeriodeFontSize').value, LP_PERIODE_FONT_PT);
+    DB.profil.lpTanggalX = clamp(parseFloat(document.getElementById('profilLpTanggalX').value));
+    DB.profil.lpTanggalY = clamp(parseFloat(document.getElementById('profilLpTanggalY').value));
+    DB.profil.lpTanggalAlign = document.getElementById('profilLpTanggalAlign').value;
+    DB.profil.lpTanggalFontSize = clampFont(document.getElementById('profilLpTanggalFontSize').value, LP_TANGGAL_FONT_PT);
+    DB.profil.lpColor = document.getElementById('profilLpColor').value === 'light' ? 'light' : 'dark';
+    const lpInp = document.getElementById('profilLpInput');
+    const lpFile = lpInp && lpInp.files[0];
+    if(lpFile){
+      resizeImageToDataUrl(lpFile, 1400, dataUrl=>{
+        if(!dataUrl){ toast('Gagal membaca gambar Lembar Persetujuan'); return; }
+        DB.profil.lpDataUrl = dataUrl; save(); toast('Lembar Persetujuan disimpan'); renderContent();
+      });
+    } else { save(); toast('Pengaturan Lembar Persetujuan disimpan'); renderContent(); }
+  });
+  const btnHapusLp = document.getElementById('btnHapusLp');
+  if(btnHapusLp) btnHapusLp.addEventListener('click', ()=>{
+    DB.profil = DB.profil || defaultProfilObj();
+    DB.profil.lpDataUrl = ''; save(); toast('Gambar Lembar Persetujuan dihapus'); renderContent();
   });
 };
 // Halaman sampul (cover) — versi profesional: latar putih bersih, bingkai tipis emas dengan
@@ -20594,6 +21023,34 @@ function laporanLengkapDrawCoverImage(doc, coverDataUrl, periodeText, periodeYPe
 
   doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0); doc.setFont(undefined,'normal');
 }
+// Halaman Lembar Persetujuan (ditempel tepat setelah Cover) — memakai gambar background kustom
+// (mode cover, sama seperti pdfAddImageCover pada Cover Kustom) lalu menempelkan 2 teks otomatis:
+// teks Periode (mis. "JULI 2026") dan teks Tanggal Pengesahan (mis. "04 Agustus 2026"), masing-
+// masing di posisi X/Y (persentase dari kiri/atas halaman) & perataan (kiri/tengah/kanan) sesuai
+// konfigurasi user — lihat DB.profil.lp* & konstanta LP_PERIODE_FONT_PT/LP_TANGGAL_FONT_PT.
+function laporanLengkapDrawPersetujuan(doc, lpDataUrl, periodeText, tanggalText, opts){
+  const o = opts || {};
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  pdfAddImageCover(doc, lpDataUrl, 0, 0, pageWidth, pageHeight);
+
+  if(o.color==='light'){ doc.setTextColor(255,255,255); } else { doc.setTextColor(40,40,40); }
+
+  const drawPositioned = (text, fontPt, xPct, yPct, align)=>{
+    if(!text) return;
+    const x = pageWidth * (Math.max(0, Math.min(100, (typeof xPct==='number' && !isNaN(xPct))?xPct:50)) / 100);
+    const y = pageHeight * (Math.max(0, Math.min(100, (typeof yPct==='number' && !isNaN(yPct))?yPct:50)) / 100);
+    doc.setFontSize(fontPt); doc.setFont(undefined,'bold');
+    doc.text(text, x, y, { align: align||'center' });
+  };
+  const periodeFontPt = (typeof o.periodeFontSize==='number' && !isNaN(o.periodeFontSize) && o.periodeFontSize>0) ? o.periodeFontSize : LP_PERIODE_FONT_PT;
+  const tanggalFontPt = (typeof o.tanggalFontSize==='number' && !isNaN(o.tanggalFontSize) && o.tanggalFontSize>0) ? o.tanggalFontSize : LP_TANGGAL_FONT_PT;
+  drawPositioned(periodeText, periodeFontPt, o.periodeX, o.periodeY, o.periodeAlign);
+  drawPositioned(tanggalText, tanggalFontPt, o.tanggalX, o.tanggalY, o.tanggalAlign);
+
+  doc.setTextColor(0,0,0); doc.setDrawColor(0,0,0); doc.setFont(undefined,'normal');
+}
 // Buku Besar semua akun, digambar langsung ke `doc` yang sudah ada (dipakai khusus di Laporan
 // Lengkap) — logikanya sama dengan exportAllBukuBesarPdf mode 'single', tapi tanpa membuat
 // dokumen/menyimpan file baru, supaya bisa disambung ke laporan gabungan.
@@ -20670,11 +21127,10 @@ function exportLaporanLengkapPdf(){
     // Teks periode khusus untuk halaman sampul (cover): bukan rentang tanggal lengkap,
     // tapi cukup nama bulannya saja (mis. "Periode Agustus"), diambil dari tanggal "dari".
     // Kalau mode "Semua" (tanpa tanggal), tetap pakai teks periode biasa sebagai fallback.
-    const NAMA_BULAN_COVER = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
     let periodeTextCover = periodeText;
     if(dari){
       const bulanIdx = parseInt(String(dari).slice(5,7), 10) - 1;
-      if(bulanIdx>=0 && bulanIdx<12) periodeTextCover = 'Periode '+NAMA_BULAN_COVER[bulanIdx];
+      if(bulanIdx>=0 && bulanIdx<12) periodeTextCover = 'Periode '+NAMA_BULAN_ID[bulanIdx];
     }
 
     // ---- Halaman 1: Cover ----
@@ -20688,7 +21144,19 @@ function exportLaporanLengkapPdf(){
       laporanLengkapDrawCover(doc, namaUsaha, logo, periodeText, alamatUsaha);
     }
 
-    // ---- Halaman 2: Daftar Isi (kontennya diisi belakangan, setelah tahu nomor halaman tiap bagian) ----
+    // ---- Halaman 2 (opsional): Lembar Persetujuan, ditempel tepat setelah Cover ----
+    // Hanya ditambahkan kalau checkbox-nya dicentang DAN gambar background sudah diupload di
+    // Pengaturan (kalau belum ada gambar, halaman ini dilewati saja tanpa menggagalkan export).
+    if(f.sections.persetujuan && DB.profil && DB.profil.lpDataUrl){
+      doc.addPage();
+      laporanLengkapDrawPersetujuan(doc, DB.profil.lpDataUrl, lpPeriodeText(f), lpTanggalPengesahanText(), {
+        color: DB.profil.lpColor,
+        periodeX: DB.profil.lpPeriodeX, periodeY: DB.profil.lpPeriodeY, periodeAlign: DB.profil.lpPeriodeAlign, periodeFontSize: lpPeriodeFontPt(),
+        tanggalX: DB.profil.lpTanggalX, tanggalY: DB.profil.lpTanggalY, tanggalAlign: DB.profil.lpTanggalAlign, tanggalFontSize: lpTanggalFontPt()
+      });
+    }
+
+    // ---- Halaman berikutnya: Daftar Isi (kontennya diisi belakangan, setelah tahu nomor halaman tiap bagian) ----
     doc.addPage();
     const tocPageNo = doc.internal.getNumberOfPages();
 
