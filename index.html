@@ -244,6 +244,8 @@ nav{padding:10px 10px 20px;flex:1}
 .btn.primary{background:var(--terracotta);color:#fff;border-color:var(--terracotta)}
 .btn.primary:hover{background:var(--terracotta-dark);color:#fff}
 .btn.ghost{border-color:transparent;background:transparent}
+.btn.primary.btn-blue{background:#2E6DA4;border-color:#2E6DA4}
+.btn.primary.btn-blue:hover{background:#25547E;border-color:#25547E}
 .btn.danger{color:var(--kredit)}
 .btn.small{padding:5px 10px;font-size:12px;border-radius:7px}
 .aksi-cell{display:flex;flex-wrap:nowrap;gap:4px;white-space:nowrap}
@@ -1861,7 +1863,7 @@ function openQuickAddJurnalModal(){
       <div class="field" style="grid-column:span 2"><label>Nominal</label><input type="text" inputmode="decimal" id="qjNominal" class="rupiah-input" placeholder="Rp 0"></div>
     </div>
     <div class="formgrid" style="margin-top:8px">${tagInputHtml('qjTagInput')}${buktiUploadHtml('qjBukti')}</div>
-    <button class="btn primary" id="qjSave" style="margin-top:10px;width:100%">Posting Jurnal</button>
+    <button class="btn primary btn-blue" id="qjSave" style="margin-top:10px;width:100%">Posting Jurnal</button>
   `, 'quickAddJurnalModal');
   bindAllAkunPickers(m);
   bindBuktiUpload('qjBukti');
@@ -8327,7 +8329,7 @@ RENDERERS.jurnal = function(c){
       </div>
     </div>
     <div class="formgrid" style="margin-top:8px">${tagInputHtml('jTagInput')}${buktiUploadHtml('jBukti')}</div>
-    <button class="btn primary" id="btnPostJurnal" style="margin-top:8px">Posting Jurnal</button>
+    <button class="btn primary btn-blue" id="btnPostJurnal" style="margin-top:8px">Posting Jurnal</button>
   </div>
   <div class="card" style="margin-top:14px">
   <div class="section-title"><h3 id="jurnalCountTitle">Riwayat Jurnal (${DB.jurnal.length})</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${searchBoxHtml('jurnalSearchInput','Cari keterangan/akun')}${sortSelectHtml('jurnalSortInput', jurnalSort)}${jurnalStatusFilterHtml(jurnalStatusFilter)}${ioToolbarHtml('jurnal', jurnalIoCfg())}<button class="btn small" id="jurnalBtnExpXlsx" type="button">⬇ Excel</button><button class="btn small" id="jurnalBtnExpPdf" type="button">⬇ PDF</button></div></div>
