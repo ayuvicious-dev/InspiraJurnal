@@ -551,7 +551,7 @@
 //      Daftar Isi, Neraca, Laba Rugi, Buku Besar, Jurnal Umum). Posisi "Tengah"
 //      (default) tidak berubah — logo & teks tetap digabung sebagai satu blok
 //      yang diposisikan di tengah seperti sebelumnya.
-const CACHE_NAME = 'integrida-cache-v84';
+const CACHE_NAME = 'integrida-cache-v85';
 const APP_SHELL = [
   './',
   './index.html',
