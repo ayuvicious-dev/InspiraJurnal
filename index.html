@@ -22502,7 +22502,7 @@ async function exportLaporanLengkapPdf(){
     const logo = DB.profil && DB.profil.logoDataUrl;
     const alamatUsaha = (DB.profil && DB.profil.alamat) || '';
 
-    const neracaTgl = f.neracaTanggal || todayStr();
+    const neracaTgl = f.neracaTanggal || endOfLastMonthStr();
     let dari, sampai, periodeText;
     if(f.periodeMode==='semua'){
       dari = null; sampai = null; periodeText = 'Periode: Semua';
