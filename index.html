@@ -218,6 +218,10 @@ nav{padding:10px 10px 20px;flex:1}
 #topbar-actions::-webkit-scrollbar{height:4px}
 #topbar-actions::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
 .sync-indicator{display:inline-flex;align-items:center;justify-content:center;flex:none;width:24px;height:24px;padding:0;border-radius:50%;background:var(--surface2);border:1px solid var(--border-soft)}
+/* ---- Persentase sinkron: angka kecil di sebelah kanan bulatan biru "Menyinkronkan…",
+   cuma tampil selagi status = syncing (lihat setSyncProgress di JS). Warna biru senada
+   dengan dot status "syncing" (#2E6DA4) supaya kelihatan satu kesatuan fitur. ---- */
+.sync-percent{display:none;flex:none;margin-left:4px;font-size:10.5px;font-weight:700;color:#2E6DA4;min-width:28px;text-align:left;letter-spacing:.01em}
 .dirty-sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#B0432C;margin-right:6px;flex:none;vertical-align:middle}
 
 #content{padding:24px 28px 60px;width:100%;overflow-x:hidden}
@@ -835,6 +839,7 @@ body.app-preboot #bottomNavSheet{
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13l3 3v13H4z"/><path d="M8 9h9M8 13h9M8 17h5"/></svg>
         </button>
         <span id="cloudSyncIndicator" class="sync-indicator" title="Status sinkronisasi cloud"></span>
+        <span id="cloudSyncPercent" class="sync-percent"></span>
         <div id="accountSwitcherWrap" title="Ganti akun">
           <button type="button" id="accountSwitcherBtn" class="btn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"></path></svg>
@@ -2921,7 +2926,28 @@ function setSyncStatus(status){
   // (satu-satunya cara pulih dari konflik data), bukan mencoba update lagi.
   el.style.cursor = 'pointer';
   el.onclick = ()=> { status==='conflict' ? window.location.reload() : manualUpdateSync(); };
+  // Angka persentase di sebelah kanan indikator ini cuma relevan SELAMA status "syncing"
+  // (proses upload berjalan) — di status lain langsung disembunyikan & di-reset ke 0%,
+  // supaya tidak ada angka basi nyangkut dari proses sinkron sebelumnya.
+  setSyncProgress(status==='syncing' ? 0 : null);
   updateSyncButtonState();
+}
+
+/* ---- Persentase sinkron (angka kecil di sebelah kanan bulatan biru "Menyinkronkan…") ----
+   Sumbernya progres upload byte-per-byte ke Firebase Storage (lihat onProgress di
+   uploadDbJsonToStorage), bukan estimasi kasar — jadi kalau ledger-nya besar/koneksi lambat,
+   angkanya benar-benar naik pelan-pelan sesuai byte yang sudah terkirim. pct===null berarti
+   "sembunyikan" (dipakai saat status BUKAN "syncing"). */
+function setSyncProgress(pct){
+  const el = document.getElementById('cloudSyncPercent');
+  if(!el) return;
+  if(pct===null){
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
+  el.style.display = 'inline-block';
+  el.textContent = pct + '%';
 }
 
 /* ---- Tombol "Update" (digabung ke dalam indikator sinkronisasi cloudSyncIndicator) ----
@@ -3100,9 +3126,20 @@ function newDbStoragePath(ledgerId){
   return 'ledgers/'+ledgerId+'/data-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.json';
 }
 
-async function uploadDbJsonToStorage(ledgerId, jsonStr){
+async function uploadDbJsonToStorage(ledgerId, jsonStr, onProgress){
   const path = newDbStoragePath(ledgerId);
-  await firebaseStorage.ref(path).putString(jsonStr, 'raw', { contentType: 'application/json' });
+  // Pakai UploadTask (bukan langsung await promise-nya) supaya progres upload byte-per-byte
+  // bisa dipantau lewat event 'state_changed' — dipakai untuk menampilkan persentase sinkron
+  // real-time di sebelah indikator "Menyinkronkan…" di topbar (lihat cloudSyncPercent).
+  const task = firebaseStorage.ref(path).putString(jsonStr, 'raw', { contentType: 'application/json' });
+  if(typeof onProgress === 'function'){
+    task.on('state_changed', snap=>{
+      const pct = snap.totalBytes ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+      onProgress(pct);
+    });
+  }
+  await task;
+  if(typeof onProgress === 'function') onProgress(100);
   return path;
 }
 
@@ -3293,7 +3330,12 @@ async function pushDbToCloud(){
     // sini. Nama file unik per-push (lihat newDbStoragePath), bukan menimpa file lama — supaya
     // kalau nanti transaksi metadata di bawah ternyata konflik, file yang masih jadi rujukan
     // device lain tidak ikut tertimpa/rusak.
-    newPath = await uploadDbJsonToStorage(ledgerIdAtStart, full);
+    newPath = await uploadDbJsonToStorage(ledgerIdAtStart, full, pct=>{
+      // Progres ini murni untuk ledger yang SEDANG dikirim saat ini — kalau di tengah proses
+      // pengguna sempat pindah akun/ledger (status sinkron sudah berganti/berhenti), abaikan
+      // update susulan yang datang telat supaya tidak salah menampilkan angka.
+      if(cloudSyncStatus==='syncing') setSyncProgress(pct);
+    });
     const chunksCol = docRefAtStart.collection('chunks');
     /* PENGAMAN UTAMA terhadap kelemahan mendasar sinkronisasi "satu dokumen utuh, bukan
        per-transaksi": sebelum device manapun menimpa data cloud, transaksi Firestore ini
