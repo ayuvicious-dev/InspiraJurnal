@@ -404,7 +404,7 @@ table.sheet tbody td.num.center{text-align:center}
 .chip.low{border-color:var(--kredit);background:var(--surface3)}
 .chip.warn{border-color:var(--warn);background:var(--surface3)}
 
-.toast{position:fixed;bottom:20px;right:20px;background:var(--toast-bg);color:var(--toast-fg);padding:11px 16px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);z-index:50;opacity:0;transform:translateY(8px);transition:.2s}
+.toast{position:fixed;bottom:calc(92px + env(safe-area-inset-bottom,0px));right:20px;left:20px;max-width:420px;margin-left:auto;background:var(--toast-bg);color:var(--toast-fg);padding:11px 16px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);z-index:91;opacity:0;transform:translateY(8px);transition:.2s}
 .toast.show{opacity:1;transform:translateY(0)}
 
 .hidden{display:none !important}
@@ -581,7 +581,7 @@ a.crumbLink:last-child{color:var(--terracotta-dark);font-weight:600}
 /* ---- Tombol "+" melayang (FAB) di pojok kanan bawah, sejajar dengan bottom nav pill,
    untuk tambah transaksi cepat ke Jurnal Umum dari mana saja tanpa perlu pindah tab dulu. ---- */
 #fabAddJurnal{
-  position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  position:fixed;right:16px;bottom:calc(92px + env(safe-area-inset-bottom,0px));
   z-index:81;width:52px;height:52px;border-radius:50%;border:none;
   background:#8FBFE0;color:#fff;font-size:26px;line-height:1;
   display:flex;align-items:center;justify-content:center;cursor:pointer;
