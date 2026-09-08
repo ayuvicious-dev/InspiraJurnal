@@ -516,6 +516,12 @@ a.crumbLink:last-child{color:var(--terracotta-dark);font-weight:600}
 #sidebar,#sidebarBackdrop,#sidebarToggleWrap{display:none !important}
 #content{padding-bottom:calc(64px + env(safe-area-inset-bottom,0px) + 24px)}
 
+/* ---- Jarak kiri & kanan #content sengaja ditambah supaya konten (tabel, kartu, dsb.)
+   TIDAK PERNAH tertutup oleh dock-dock ikon yang melayang di 4 pojok layar: Inventory
+   (kiri atas), Laporan (kanan atas), Setting (kiri bawah), Budgeting (kanan bawah).
+   Lebar tiap dock ±46px + jarak 10px dari tepi layar, jadi 62px sudah cukup lapang. ---- */
+#content{padding-left:62px;padding-right:62px}
+
 #bottomNav{
   display:flex;position:fixed;left:0;right:0;bottom:0;z-index:80;
   background:var(--paper);border-top:1px solid var(--line);
@@ -530,8 +536,10 @@ a.crumbLink:last-child{color:var(--terracotta-dark);font-weight:600}
 }
 #bottomNav .bnbtn svg{width:20px;height:20px;flex:none}
 #bottomNav .bnbtn .bnlabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-#bottomNav .bnbtn.active{color:var(--terracotta)}
-#bottomNav .bnbtn.active svg{stroke:var(--terracotta)}
+/* Warna Dashboard saat aktif & tombol "+" disamakan (netral, ink-soft) dengan tombol
+   Setting, supaya ketiga simbol di bottom bar seragam satu tone — bukan biru pastel lagi. */
+#bottomNav .bnbtn.active{color:var(--ink-soft)}
+#bottomNav .bnbtn.active svg{stroke:var(--ink-soft)}
 
 #bottomNavSheetBackdrop{display:none}
 #bottomNavSheetBackdrop.open{
@@ -578,16 +586,94 @@ a.crumbLink:last-child{color:var(--terracotta-dark);font-weight:600}
   border-radius:16px;
 }
 
-/* ---- Tombol "+" melayang (FAB) di pojok kanan bawah, sejajar dengan bottom nav pill,
-   untuk tambah transaksi cepat ke Jurnal Umum dari mana saja tanpa perlu pindah tab dulu. ---- */
-#fabAddJurnal{
-  position:fixed;right:16px;bottom:calc(92px + env(safe-area-inset-bottom,0px));
-  z-index:81;width:52px;height:52px;border-radius:50%;border:none;
-  background:#8FBFE0;color:#fff;font-size:26px;line-height:1;
-  display:flex;align-items:center;justify-content:center;cursor:pointer;
-  box-shadow:0 8px 20px rgba(44,58,72,.28);
+/* ---- Tombol "Tambah" (dulu FAB "+" melayang) sekarang jadi bagian dari bottom bar,
+   di pojok paling kanan (sebelah kanan tombol Pengaturan) — untuk tambah transaksi cepat
+   ke Jurnal Umum dari mana saja tanpa perlu pindah tab dulu. Tone ikon "+"-nya disamakan
+   (netral, ink-soft) dengan ikon Setting supaya seragam satu tone di bottom bar, bukan
+   bulat biru menonjol lagi. ---- */
+#bottomNav .bnicon-add{
+  width:23px;height:23px;border-radius:50%;background:var(--ink-soft);color:var(--paper);
+  font-size:16px;line-height:1;font-weight:700;flex:none;
+  display:flex;align-items:center;justify-content:center;
 }
-#fabAddJurnal:active{transform:scale(.94)}
+#bottomNav .bnbtn:active .bnicon-add{transform:scale(.94)}
+
+/* ---- Dock pintasan "Laporan" melayang di samping kanan layar (HP) — sama semangatnya
+   dengan ikon-ikon fitur input (Aset/Pembelian/Biaya/Jurnal Umum) di topbar: cuma logo,
+   tanpa label teks, supaya ringkas. Bedanya, tombol-tombol input di topbar membuka modal
+   tambah-cepat, sedangkan tombol di dock ini LANGSUNG pindah ke halaman laporan tujuan
+   (bukan modal) — urutan dari atas ke bawah: Neraca, Laba Rugi, Perubahan Modal, Arus Kas,
+   Buku Besar, Kas & Bank, Laporan Lengkap.
+   Sengaja ditempatkan di kanan ATAS (bukan di tengah kanan seperti sebelumnya) supaya area
+   kanan BAWAH tetap kosong dan bisa dipakai fitur lain. ---- */
+#reportShortcutDock{
+  display:flex;flex-direction:column;gap:6px;
+  position:fixed;right:10px;top:70px;transform:none;z-index:79;
+  background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:6px;box-shadow:0 8px 22px rgba(44,38,32,.16);
+}
+#reportShortcutDock .rsbtn{
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+  background:none;border:none;border-radius:9px;color:var(--ink-soft);cursor:pointer;
+}
+#reportShortcutDock .rsbtn svg{width:16px;height:16px;flex:none}
+#reportShortcutDock .rsbtn:active{background:var(--hover-bg)}
+#reportShortcutDock .rsbtn.active{color:var(--terracotta);background:var(--hover-bg)}
+
+/* ---- Dock pintasan "Budgeting" melayang di kanan BAWAH layar (HP) — pasangan dock
+   Laporan di kanan atas. Sama-sama cuma ikon tanpa label, klik langsung pindah ke tab
+   tujuan. Dipisah dari bottom nav (lihat renderBottomNav) supaya area kanan bawah ini
+   bisa dipakai khusus untuk grup Budgeting (Budgeting Menu, Budgeting Travel,
+   Budgeting Ruangan). ---- */
+#budgetingShortcutDock{
+  display:flex;flex-direction:column;gap:6px;
+  position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:79;
+  background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:6px;box-shadow:0 8px 22px rgba(44,38,32,.16);
+}
+#budgetingShortcutDock .rsbtn{
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+  background:none;border:none;border-radius:9px;color:var(--ink-soft);cursor:pointer;
+}
+#budgetingShortcutDock .rsbtn svg{width:16px;height:16px;flex:none}
+#budgetingShortcutDock .rsbtn:active{background:var(--hover-bg)}
+#budgetingShortcutDock .rsbtn.active{color:var(--terracotta);background:var(--hover-bg)}
+
+/* ---- Dock pintasan "Inventory" melayang di kiri ATAS layar — pasangan (sisi kiri) dari
+   dock Laporan di kanan atas. Cuma ikon tanpa label, klik langsung pindah ke tab tujuan.
+   Berisi grup Inventory: Resep, Persediaan Bahan, Persediaan Barang, Lokasi Persediaan. ---- */
+#inventoryShortcutDock{
+  display:flex;flex-direction:column;gap:6px;
+  position:fixed;left:10px;top:70px;z-index:79;
+  background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:6px;box-shadow:0 8px 22px rgba(44,38,32,.16);
+}
+#inventoryShortcutDock .rsbtn{
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+  background:none;border:none;border-radius:9px;color:var(--ink-soft);cursor:pointer;
+}
+#inventoryShortcutDock .rsbtn svg{width:16px;height:16px;flex:none}
+#inventoryShortcutDock .rsbtn:active{background:var(--hover-bg)}
+#inventoryShortcutDock .rsbtn.active{color:var(--terracotta);background:var(--hover-bg)}
+
+/* ---- Dock pintasan "Setting" melayang di kiri BAWAH layar — pasangan (sisi kiri) dari
+   dock Budgeting di kanan bawah, dan pasangan (sisi bawah) dari dock Inventory di kiri atas.
+   Cuma ikon tanpa label, klik langsung pindah ke sub-halaman Setting tujuan. Berisi 5
+   sub-menu: Transaksi, Chart of Accounts, User, Tampilan, Backup (lihat SETTING_DOCK_ITEMS
+   & renderSettingShortcutDock) — "Project Aplikasi" sengaja tidak ikut, tetap di bottom bar. ---- */
+#settingShortcutDock{
+  display:flex;flex-direction:column;gap:6px;
+  position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:79;
+  background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:6px;box-shadow:0 8px 22px rgba(44,38,32,.16);
+}
+#settingShortcutDock .rsbtn{
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+  background:none;border:none;border-radius:9px;color:var(--ink-soft);cursor:pointer;
+}
+#settingShortcutDock .rsbtn svg{width:16px;height:16px;flex:none}
+#settingShortcutDock .rsbtn:active{background:var(--hover-bg)}
+#settingShortcutDock .rsbtn.active{color:var(--terracotta);background:var(--hover-bg)}
 
 /* ---- Sisanya (tabel ringkas, grid 2 kolom, dsb.) HANYA berlaku di layar sempit (HP) —
    di layar lebar (laptop/desktop), tabel & grid tetap pakai layout lebar penuh biasa. ---- */
@@ -643,7 +729,16 @@ a.crumbLink:last-child{color:var(--terracotta-dark);font-weight:600}
   #topbar-actions .btn{padding:5px 7px;font-size:10px;gap:3px;border-radius:7px}
   .sync-indicator{width:20px;height:20px}
   #userBadge{display:none}
-  #content{padding:12px 10px 40px}
+  /* Topbar di HP jadi 2 baris (ikon input di atas, judul halaman di bawah) sehingga lebih
+     tinggi dari versi desktop — dock "Laporan" perlu turun sedikit lagi supaya tidak
+     ketutupan/bertabrakan dengan baris judul halaman. */
+  #reportShortcutDock{top:96px}
+  #inventoryShortcutDock{top:96px}
+  /* Di HP, bottom nav berbentuk pil melayang di tengah-bawah layar (lihat #bottomNav) —
+     dock Budgeting dinaikkan supaya tidak bertumpukan/ketutupan pil itu. */
+  #budgetingShortcutDock{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+  #settingShortcutDock{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+  #content{padding:12px 56px 40px}
   .card{padding:12px 12px;border-radius:11px}
   .grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr 1fr;gap:8px}
   /* Kartu Komposisi (donut chart) di Laba Rugi: di HP dibuat 1 kolom menurun, bukan ikut
@@ -856,7 +951,10 @@ body.app-preboot #bottomNavSheet{
   </main>
 </div>
 <nav id="bottomNav"></nav>
-<button type="button" id="fabAddJurnal" title="Tambah transaksi cepat (Jurnal Umum)">+</button>
+<nav id="reportShortcutDock"></nav>
+<nav id="budgetingShortcutDock"></nav>
+<nav id="inventoryShortcutDock"></nav>
+<nav id="settingShortcutDock"></nav>
 <div id="bottomNavSheetBackdrop"></div>
 <div id="bottomNavSheet"></div>
 <div class="toast" id="toast"></div>
@@ -1843,16 +1941,12 @@ function initAsetTopbarShortcut(){
   const btn = document.getElementById('btnAsetTopbar');
   if(btn) btn.addEventListener('click', ()=>{ switchTab('aset'); closeSidebar(); });
 }
-/* Tombol "+" melayang di pojok kanan bawah (lihat CSS #fabAddJurnal): dibuka dari mana saja
-   (tab apapun) untuk input transaksi cepat langsung ke Jurnal Umum, tanpa perlu pindah ke tab
-   Jurnal Umum dulu. Formnya sengaja lebih ringkas dari form "Tambah Jurnal" biasa (cuma 1
-   pasang Debit/Kredit, tanpa opsi Amortisasi/Reminder Payment/Diskon) — untuk kasus itu tetap
-   pakai form lengkap di tab Jurnal Umum.
+/* Tombol "Tambah" di pojok paling kanan bottom bar (lihat renderBottomNav, id bnAddJurnal):
+   dibuka dari mana saja (tab apapun) untuk input transaksi cepat langsung ke Jurnal Umum,
+   tanpa perlu pindah ke tab Jurnal Umum dulu. Formnya sengaja lebih ringkas dari form
+   "Tambah Jurnal" biasa (cuma 1 pasang Debit/Kredit, tanpa opsi Amortisasi/Reminder
+   Payment/Diskon) — untuk kasus itu tetap pakai form lengkap di tab Jurnal Umum.
 */
-function initFabAddJurnal(){
-  const btn = document.getElementById('fabAddJurnal');
-  if(btn) btn.addEventListener('click', ()=> openQuickAddJurnalModal());
-}
 function openQuickAddJurnalModal(){
   const m = openFormModal('Tambah Transaksi Cepat', `
     <div class="formgrid">
@@ -2386,7 +2480,7 @@ let DB = null;
 
 function freshDB(){
   return {
-    coa:[], jurnal:[], pembelian:[], penjualan:[], pemakaian:[], produksiResep:[], biaya:[], produk:[], resep:[], project:[], penyesuaianStok:[], upgradeTransaksi:[],
+    coa:[], jurnal:[], pembelian:[], penjualan:[], pemakaian:[], produksiResep:[], biaya:[], produk:[], resep:[], project:[], penyesuaianStok:[],
     budgeting:[], budgetKalender:[], budgetSetting:{targetHariStok:null}, counters:{}, tags:[], lokasiCustom:[], lokasiHapus:[], lokasiBarangCustom:[], lokasiFolders:[], kategoriBarangCustom:['Peralatan','Perlengkapan'], barang:[], aset:[], budgetingTravel:[], budgetingRuangan:[], kalenderManual:[], kalenderRekomHapus:[],
     users:[], currentUserId:null, riwayatTransaksi:[],
     jenisBahanCustom:[], jenisResepCustom:['Sambal','Bumbu','Minuman','Makanan Utama','Camilan'],
@@ -4831,7 +4925,6 @@ const NAV_ICONS = {
   user: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4.5 5-6.5 8-6.5s6.5 2 8 6.5"/></svg>',
   tampilan: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
   backup: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17a4.5 4.5 0 0 1-1-8.9 5.5 5.5 0 0 1 10.6-1.6A4.5 4.5 0 0 1 17 17H7z"/><path d="M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg>',
-  upgradetransaksi: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0-8.6-12M3 3v6h6"/><path d="M12 8v5l3 3"/></svg>',
   settings: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1z"/></svg>',
 };
 let currentTab = 'dashboard';
@@ -4862,14 +4955,97 @@ function renderNav(){
     closeSidebar();
   }));
   renderBottomNav();
+  renderReportShortcutDock();
+  renderBudgetingShortcutDock();
+  renderInventoryShortcutDock();
+  renderSettingShortcutDock();
 }
 
-/* ---- Bottom navigation (HP) ----
-   Menggantikan sidebar kiri di layar sempit: 5 tombol sesuai grup di NAV (Ringkasan,
-   Persediaan, Budgeting, Laporan, Pengaturan). Grup dengan 1 menu (mis. Ringkasan →
-   Dashboard, Pengaturan → Setting) langsung pindah tab saat tombolnya ditekan. Grup
-   dengan beberapa menu (Persediaan, Budgeting, Laporan) membuka lembar pilihan
-   (bottom sheet) berisi semua menu di grup itu — sesuai contoh gambar yang diberikan. */
+/* ---- Dock pintasan "Laporan" di samping kanan (HP) ----
+   Daftar id di sini sengaja diambil dari grup 'Report' pada NAV, urut dari atas ke bawah:
+   Neraca, Laba Rugi, Perubahan Modal, Arus Kas, Buku Besar, Kas & Bank, Laporan Lengkap.
+   Beda dengan tombol fitur input (Aset/Pembelian/Biaya/Jurnal Umum) di topbar yang membuka
+   modal tambah-cepat, tiap tombol di sini klik langsung pindah ke tab laporan tujuannya —
+   tidak lewat bottom sheet seperti tombol grup "Report" di bottom nav. */
+function renderReportShortcutDock(){
+  const dock = document.getElementById('reportShortcutDock');
+  if(!dock) return;
+  const admin = isAdmin();
+  const reportGroup = NAV.find(g=> g.group==='Report');
+  // "Kas & Bank" sengaja disembunyikan khusus dari dock kanan ini (tetap ada di sidebar
+  // kiri & bottom sheet grup Report seperti biasa).
+  const items = reportGroup ? reportGroup.items.filter(it=> (admin || !STAFF_RESTRICTED_TABS.has(it.id)) && it.id!=='kasbank') : [];
+  dock.innerHTML = items.map(it=>`<button type="button" class="rsbtn ${currentTab===it.id?'active':''}" data-tab="${it.id}" title="${it.label}">${NAV_ICONS[it.id]||'•'}</button>`).join('');
+  dock.querySelectorAll('.rsbtn').forEach(b=> b.addEventListener('click', ()=>{
+    switchTab(b.dataset.tab);
+    closeSidebar();
+    closeBottomNavSheet();
+  }));
+}
+
+/* ---- Dock pintasan "Budgeting" di samping kanan bawah (HP) ----
+   Sama seperti dock Laporan (di kanan atas), hanya berisi ikon tanpa label, klik langsung
+   pindah ke tab tujuan (bukan lewat bottom sheet). Daftar id diambil dari grup 'Budgeting'
+   pada NAV: Budgeting Menu, Budgeting Travel, Budgeting Ruangan. */
+function renderBudgetingShortcutDock(){
+  const dock = document.getElementById('budgetingShortcutDock');
+  if(!dock) return;
+  const admin = isAdmin();
+  const budgetingGroup = NAV.find(g=> g.group==='Budgeting');
+  const items = budgetingGroup ? budgetingGroup.items.filter(it=> admin || !STAFF_RESTRICTED_TABS.has(it.id)) : [];
+  dock.innerHTML = items.map(it=>`<button type="button" class="rsbtn ${currentTab===it.id?'active':''}" data-tab="${it.id}" title="${it.label}">${NAV_ICONS[it.id]||'•'}</button>`).join('');
+  dock.querySelectorAll('.rsbtn').forEach(b=> b.addEventListener('click', ()=>{
+    switchTab(b.dataset.tab);
+    closeSidebar();
+    closeBottomNavSheet();
+  }));
+}
+
+/* ---- Dock pintasan "Inventory" di kiri atas ----
+   Sama seperti dock Laporan/Budgeting: cuma ikon tanpa label, klik langsung pindah ke tab
+   tujuan. Daftar id diambil dari grup 'Inventory' pada NAV: Resep, Persediaan Bahan,
+   Persediaan Barang, Lokasi Persediaan. */
+function renderInventoryShortcutDock(){
+  const dock = document.getElementById('inventoryShortcutDock');
+  if(!dock) return;
+  const admin = isAdmin();
+  const inventoryGroup = NAV.find(g=> g.group==='Inventory');
+  const items = inventoryGroup ? inventoryGroup.items.filter(it=> admin || !STAFF_RESTRICTED_TABS.has(it.id)) : [];
+  dock.innerHTML = items.map(it=>`<button type="button" class="rsbtn ${currentTab===it.id?'active':''}" data-tab="${it.id}" title="${it.label}">${NAV_ICONS[it.id]||'•'}</button>`).join('');
+  dock.querySelectorAll('.rsbtn').forEach(b=> b.addEventListener('click', ()=>{
+    switchTab(b.dataset.tab);
+    closeSidebar();
+    closeBottomNavSheet();
+  }));
+}
+
+/* ---- Dock pintasan "Setting" di kiri bawah ----
+   Sama seperti dock Inventory/Laporan/Budgeting: cuma ikon tanpa label, klik langsung pindah
+   ke sub-halaman Setting tujuannya. Berisi 5 sub-menu Setting: Transaksi, Chart of Accounts,
+   User, Tampilan, Backup — daftarnya dari SETTING_DOCK_ITEMS (lihat definisinya di dekat
+   BOTTOM_NAV_VIRTUAL_SUBITEMS). "Project Aplikasi" SENGAJA tidak dipindah ke sini, tetap
+   diakses lewat tombol "Setting" di bottom bar seperti biasa. */
+function renderSettingShortcutDock(){
+  const dock = document.getElementById('settingShortcutDock');
+  if(!dock) return;
+  const admin = isAdmin();
+  const items = SETTING_DOCK_ITEMS.filter(it=> admin || !STAFF_RESTRICTED_TABS.has(it.id));
+  const isActive = it=> currentTab==='settings' && settingsSubTab===it.id;
+  dock.innerHTML = items.map(it=>`<button type="button" class="rsbtn ${isActive(it)?'active':''}" data-tab="${it.id}" title="${it.label}">${NAV_ICONS[it.id]||'•'}</button>`).join('');
+  dock.querySelectorAll('.rsbtn').forEach(b=> b.addEventListener('click', ()=>{
+    settingsSubTab = b.dataset.tab;
+    switchTab('settings');
+    closeSidebar();
+    closeBottomNavSheet();
+  }));
+}
+
+/* ---- Bottom navigation ----
+   Sisa 2 tombol saja (Ringkasan/Dashboard, Pengaturan) karena grup Inventory, Budgeting,
+   dan Report sudah dipindah masing-masing ke dock ikon-saja: kiri atas (inventoryShortcutDock),
+   kanan bawah (budgetingShortcutDock), dan kanan atas (reportShortcutDock). Grup "Pengaturan"
+   tetap membuka bottom sheet berisi sub-halamannya (lihat BOTTOM_NAV_VIRTUAL_SUBITEMS),
+   sedangkan "Dashboard" langsung pindah tab saat tombolnya ditekan. */
 const BOTTOM_NAV_GROUP_ICONS = {
   Dashboard: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
   Inventory: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/></svg>',
@@ -4884,26 +5060,36 @@ const BOTTOM_NAV_GROUP_ICONS = {
    sheet berisi daftar sub-halaman itu (sama seperti grup Laporan/Persediaan/Budgeting), dipetakan
    di sini secara terpisah: klik salah satu itemnya akan set settingsSubTab lalu pindah ke tab
    'settings', bukan pindah ke tab NAV lain. */
+/* Sub-menu Setting yang tetap tampil lewat tombol "Setting" di bottom bar (bottom sheet):
+   cuma "Project Aplikasi" — sub-menu lainnya (Transaksi, Chart of Accounts, User, Tampilan,
+   Backup) sudah dipindah ke dock ikon-saja di kiri bawah, lihat settingShortcutDock /
+   renderSettingShortcutDock & SETTING_DOCK_ITEMS di bawah. */
 const BOTTOM_NAV_VIRTUAL_SUBITEMS = {
   Setting: {
     tab: 'settings',
     items: [
-      {id:'transaksi', label:'Transaksi'},
-      {id:'coa', label:'Chart of Accounts'},
-      {id:'user', label:'User'},
-      {id:'tampilan', label:'Tampilan'},
       {id:'projectaplikasi', label:'Project Aplikasi'},
-      {id:'backup', label:'Backup'},
-      {id:'upgradetransaksi', label:'Upgrade Transaksi'},
     ],
   },
 };
+/* Sub-menu Setting yang dipindah ke dock kiri bawah (icon-only) — lihat renderSettingShortcutDock. */
+const SETTING_DOCK_ITEMS = [
+  {id:'transaksi', label:'Transaksi'},
+  {id:'coa', label:'Chart of Accounts'},
+  {id:'user', label:'User'},
+  {id:'tampilan', label:'Tampilan'},
+  {id:'backup', label:'Backup'},
+];
 function renderBottomNav(){
   const bn = document.getElementById('bottomNav');
   if(!bn) return;
   const admin = isAdmin();
   const groups = NAV.map(g=> ({group:g.group, items: g.items.filter(it=> admin || !STAFF_RESTRICTED_TABS.has(it.id))}))
-    .filter(g=> g.items.length>0);
+    .filter(g=> g.items.length>0)
+    // Grup "Report", "Budgeting" & "Inventory" sengaja tidak ditampilkan di bottom nav
+    // karena pintasannya sudah ada masing-masing di dock kanan atas (reportShortcutDock),
+    // dock kanan bawah (budgetingShortcutDock), dan dock kiri atas (inventoryShortcutDock).
+    .filter(g=> g.group!=='Report' && g.group!=='Budgeting' && g.group!=='Inventory');
   bn.innerHTML = groups.map(g=>{
     const virtual = BOTTOM_NAV_VIRTUAL_SUBITEMS[g.group];
     const isActive = virtual ? currentTab===virtual.tab : g.items.some(it=> it.id===currentTab);
@@ -4911,13 +5097,30 @@ function renderBottomNav(){
       <span class="bnicon">${BOTTOM_NAV_GROUP_ICONS[g.group]||'•'}</span>
       <span class="bnlabel">${g.group}</span>
     </button>`;
-  }).join('');
+  }).join('')
+    // Tombol "Tambah" (dulu FAB "+" melayang, lihat openQuickAddJurnalModal) sengaja diletakkan
+    // paling pojok kanan bottom bar, setelah tombol grup terakhir (Pengaturan).
+    + `<button type="button" class="bnbtn" id="bnAddJurnal" title="Tambah transaksi cepat (Jurnal Umum)">
+      <span class="bnicon bnicon-add">+</span>
+      <span class="bnlabel">Tambah</span>
+    </button>`;
+  const btnAdd = document.getElementById('bnAddJurnal');
+  if(btnAdd) btnAdd.addEventListener('click', ()=> openQuickAddJurnalModal());
   bn.querySelectorAll('.bnbtn').forEach(b=> b.addEventListener('click', ()=>{
     const g = groups.find(x=> x.group===b.dataset.group);
     if(!g) return;
     const virtual = BOTTOM_NAV_VIRTUAL_SUBITEMS[g.group];
     const sheet = document.getElementById('bottomNavSheet');
     if(virtual){
+      // Sekarang virtual.items Setting cuma berisi 1 item ("Project Aplikasi") setelah
+      // sub-menu lain dipindah ke dock kiri bawah — jadi langsung pindah tab tanpa lewat
+      // bottom sheet lagi (sama seperti grup non-virtual dengan 1 item, di bawah).
+      if(virtual.items.length===1){
+        settingsSubTab = virtual.items[0].id;
+        switchTab(virtual.tab);
+        closeBottomNavSheet();
+        return;
+      }
       if(sheet && sheet.classList.contains('open') && sheet.dataset.group===g.group){
         closeBottomNavSheet();
       } else {
@@ -5939,55 +6142,6 @@ function ensureResepSpinKategori(){
       {id:uid(), nama:'Makanan Ringan', icon:'🍿', items: RESEP_SPIN_DATA.ringan.slice()}
     ];
   }
-}
-
-/* Pastikan DB.upgradeTransaksi ada — dipakai oleh sub-tab Setting "Upgrade Transaksi"
-   (daftar progress pengembangan/upgrade fitur transaksi: judul, keterangan & status selesai).
-   Aman untuk DB lama (localStorage) yang belum punya field ini. */
-function ensureUpgradeTransaksi(){
-  if(!DB.upgradeTransaksi) DB.upgradeTransaksi = [];
-}
-/* Persentase finalisasi Upgrade Transaksi = proporsi item yang sudah dicentang "selesai"
-   terhadap seluruh item di daftar. Mengembalikan 0 kalau daftar masih kosong (belum ada
-   progress untuk dihitung), supaya tidak terjadi pembagian dengan nol. */
-function hitungPersenUpgradeTransaksi(){
-  ensureUpgradeTransaksi();
-  const total = DB.upgradeTransaksi.length;
-  if(total===0) return 0;
-  const selesai = DB.upgradeTransaksi.filter(x=>x.selesai).length;
-  return Math.round((selesai/total)*100);
-}
-/* Pop up "Item upgrade baru" / edit item Upgrade Transaksi, dibangun di atas openFormModal
-   generik (dipakai juga oleh form edit Jurnal, dll) supaya tampilannya konsisten dengan
-   modal lain di app: judul modal, field Judul (wajib) & Keterangan (opsional, textarea),
-   lalu tombol Batal (menutup tanpa menyimpan) & Simpan. Kalau `u` diisi (item existing),
-   modal jadi mode edit dengan nilai awal terisi; kalau kosong, modal jadi mode tambah baru. */
-function openUpgradeTransaksiFormModal(u){
-  ensureUpgradeTransaksi();
-  const isEdit = !!u;
-  const m = openFormModal(isEdit?'Ubah Item Upgrade':'Item upgrade baru', `
-    <div class="field" style="margin-bottom:12px"><label>Judul</label><input type="text" id="utJudul" placeholder="Contoh: Notifikasi push saat aplikasi tertutup" value="${isEdit?escHtml(u.judul):''}"></div>
-    <div class="field" style="margin-bottom:14px"><label>Keterangan (opsional)</label><textarea id="utKeterangan" rows="3" placeholder="Detail rencana upgrade...">${isEdit?escHtml(u.keterangan||''):''}</textarea></div>
-    <div style="display:flex;justify-content:flex-end;gap:8px">
-      <button class="btn" id="utBatal" type="button">Batal</button>
-      <button class="btn primary" id="utSimpan" type="button">Simpan</button>
-    </div>
-  `, 'upgradeTransaksiFormModal');
-  const judulInput = m.querySelector('#utJudul');
-  judulInput.focus();
-  m.querySelector('#utBatal').addEventListener('click', ()=> m.remove());
-  m.querySelector('#utSimpan').addEventListener('click', ()=>{
-    const judul = judulInput.value.trim();
-    if(!judul) return toast('Judul tidak boleh kosong');
-    const keterangan = m.querySelector('#utKeterangan').value.trim();
-    if(isEdit){
-      u.judul = judul; u.keterangan = keterangan;
-    } else {
-      DB.upgradeTransaksi.push({ id:uid(), judul, keterangan, selesai:false });
-    }
-    save(); m.remove(); renderContent();
-    toast(isEdit?'Item upgrade diperbarui':'Item upgrade ditambahkan');
-  });
 }
 
 function fileToBase64(file, cb){
@@ -19937,37 +20091,6 @@ RENDERERS.settings = function(c){
     </div>
   </div>`;
 
-  /* ---- Upgrade Transaksi: daftar progress pengembangan/upgrade aplikasi (bukan data
-     transaksi jurnal) — tiap item punya kolom centang (selesai/belum), judul (bisa diklik
-     untuk edit inline) & keterangan, plus ringkasan persentase finalisasi keseluruhan
-     daftar di bagian atas. Ditaruh sebagai sub-tab Setting sendiri, di sebelah kanan
-     Backup, supaya progress upgrade fitur transaksi bisa dipantau langsung dari app. */
-  ensureUpgradeTransaksi();
-  const persenUpgradeTransaksi = hitungPersenUpgradeTransaksi();
-  const upgradeTransaksiHtml = `<div class="card">
-    <div class="section-title"><h3>Upgrade Transaksi</h3>
-      <button class="btn small primary" id="btnAddUpgradeTransaksi">+ Tambah Progress</button>
-    </div>
-    <div style="margin-bottom:10px">${infoNoteHtml('Apa isi Upgrade Transaksi ini', `Daftar progress pengembangan/upgrade fitur transaksi di aplikasi ini — tiap baris punya judul, keterangan, dan kolom centang untuk menandai sudah selesai atau belum. Persentase finalisasi di atas dihitung otomatis dari proporsi item yang sudah dicentang selesai.`)}</div>
-    <div style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span class="mini">Progress Finalisasi</span>
-        <span style="font-weight:700">${persenUpgradeTransaksi}%</span>
-      </div>
-      <div style="background:var(--border,#e2e2e2);border-radius:999px;height:10px;overflow:hidden">
-        <div style="background:var(--primary,#2563eb);height:100%;width:${persenUpgradeTransaksi}%"></div>
-      </div>
-    </div>
-    <div class="tablewrap"><table class="sheet"><thead><tr><th style="width:36px"></th><th>Judul</th><th>Keterangan</th><th style="width:60px"></th></tr></thead><tbody>
-    ${DB.upgradeTransaksi.length ? DB.upgradeTransaksi.map(u=>`<tr>
-      <td><input type="checkbox" class="chkUpgradeTransaksiSelesai" data-id="${u.id}" ${u.selesai?'checked':''}></td>
-      <td><button type="button" class="btnUpgradeTransaksiJudul" data-id="${u.id}" style="background:none;border:none;padding:0;color:var(--primary,#2563eb);text-decoration:underline;cursor:pointer;font-weight:600;text-align:left;${u.selesai?'text-decoration-line:underline line-through;opacity:.65':''}">${escHtml(u.judul)}</button></td>
-      <td class="wrap-cell">${escHtml(u.keterangan||'')}</td>
-      <td><button class="btn small danger btnDelUpgradeTransaksi" data-id="${u.id}" type="button">Hapus</button></td>
-    </tr>`).join('') : '<tr><td colspan="4" class="empty">Belum ada progress upgrade transaksi. Klik "+ Tambah Progress" untuk menambahkan.</td></tr>'}
-    </tbody></table></div>
-  </div>`;
-
   const SETTINGS_SUBTABS = [
     {id:'transaksi', label:'Transaksi'},
     {id:'coa', label:'Chart of Accounts'},
@@ -19975,7 +20098,6 @@ RENDERERS.settings = function(c){
     {id:'tampilan', label:'Tampilan'},
     {id:'projectaplikasi', label:'Project Aplikasi'},
     {id:'backup', label:'Backup'},
-    {id:'upgradetransaksi', label:'Upgrade Transaksi'},
   ];
   // Baris tombol switch (Transaksi | Chart of Accounts | User | Tampilan | Project Aplikasi | Backup)
   // dulu dirender di atas konten Setting. Dihapus karena dobel dengan menu "PENGATURAN" di
@@ -19990,7 +20112,6 @@ RENDERERS.settings = function(c){
   else if(settingsSubTab==='user') sectionHtml = switchAkunHtml + profilUsahaHtml + tambahUserHtml + daftarUserHtml + logoutHtml;
   else if(settingsSubTab==='projectaplikasi') sectionHtml = '<div id="settingsProjectAplikasiWrap"></div>';
   else if(settingsSubTab==='backup') sectionHtml = backupHtml;
-  else if(settingsSubTab==='upgradetransaksi') sectionHtml = upgradeTransaksiHtml;
   else sectionHtml = tampilanHtml + kelolaTagHtml;
 
   c.innerHTML = tabBarHtml + sectionHtml;
@@ -20028,29 +20149,6 @@ RENDERERS.settings = function(c){
     // jadi sub-tab "Backup" di sebelah kanan Project Aplikasi. Karena tombolnya baru dibuat
     // lagi tiap render, listener-nya perlu dibind ulang tiap kali sub-tab ini dibuka.
     bindBackupRestoreControls();
-  }
-
-  if(settingsSubTab==='upgradetransaksi'){
-    // Sub-tab "Upgrade Transaksi" di sebelah kanan Backup. Tombol tambah, checkbox selesai,
-    // judul (edit inline) & hapus perlu dibind ulang tiap kali sub-tab ini dirender karena
-    // elemennya baru dibuat lagi tiap render (sama seperti pola sub-tab lain di Setting).
-    const btnAddUpgradeTransaksi = document.getElementById('btnAddUpgradeTransaksi');
-    if(btnAddUpgradeTransaksi) btnAddUpgradeTransaksi.addEventListener('click', ()=>{
-      openUpgradeTransaksiFormModal();
-    });
-    c.querySelectorAll('.chkUpgradeTransaksiSelesai').forEach(chk=> chk.addEventListener('change', e=>{
-      const u = DB.upgradeTransaksi.find(x=>x.id===chk.dataset.id); if(!u) return;
-      u.selesai = e.target.checked; save(); renderContent();
-    }));
-    c.querySelectorAll('.btnUpgradeTransaksiJudul').forEach(btn=> btn.addEventListener('click', ()=>{
-      const u = DB.upgradeTransaksi.find(x=>x.id===btn.dataset.id); if(!u) return;
-      openUpgradeTransaksiFormModal(u);
-    }));
-    c.querySelectorAll('.btnDelUpgradeTransaksi').forEach(btn=> btn.addEventListener('click', ()=>{
-      if(!confirm('Hapus progress ini?')) return;
-      DB.upgradeTransaksi = DB.upgradeTransaksi.filter(x=>x.id!==btn.dataset.id);
-      save(); renderContent();
-    }));
   }
 
   if(settingsSubTab==='transaksi'){
@@ -20619,7 +20717,6 @@ function finishInit(){
   initBiayaTopbarShortcut();
   initPembelianTopbarShortcut();
   initAsetTopbarShortcut();
-  initFabAddJurnal();
   // Tombol Backup JSON / Backup Semua Akun / Restore sekarang dipindah ke sub-tab "Backup"
   // di menu Setting (lihat bindBackupRestoreControls & RENDERERS.settings) — dibind ulang
   // setiap kali sub-tab itu dirender, bukan sekali saat boot seperti dulu waktu masih di topbar.
