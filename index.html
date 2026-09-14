@@ -400,9 +400,13 @@ table.sheet tbody td.num.center{text-align:center}
 .formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
 .field label{display:block;font-size:11.3px;font-weight:600;color:var(--ink-soft);margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
 .field input,.field select,.field textarea{
-  width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);font-size:13.5px;color:var(--ink);
+  width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);font-size:13.5px;font-family:inherit;color:var(--ink);
 }
 .field textarea{resize:vertical;min-height:38px}
+#quickAddJurnalModal .field input,#quickAddJurnalModal .field select,#quickAddJurnalModal .field textarea{text-align:center}
+#quickAddJurnalModal .field input[type="date"]{display:flex;justify-content:center}
+#quickAddJurnalModal .field input[type="date"]::-webkit-datetime-edit{text-align:center;flex:none}
+#quickAddJurnalModal .field label{text-align:center}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent,#3b82f6);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
 
 .tabs2{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:0}
@@ -487,6 +491,9 @@ a.crumbLink:last-child{color:var(--accent,#3b82f6);font-weight:600}
 }
 .datefield-disp.empty{color:var(--ink-soft)}
 .datefield-wrap:focus-within .datefield-disp{border-color:var(--terracotta);box-shadow:0 0 0 3px rgba(193,96,61,.12)}
+/* Khusus form "Tambah Transaksi Cepat" (quickAddJurnalModal): angka tanggal dibuat rata tengah,
+   beda dari field tanggal lain di aplikasi yang tetap rata kiri. */
+#quickAddJurnalModal .datefield-disp{text-align:center}
 
 /* ---- Lokasi Persediaan: baris struktur folder (lihat renderLokasiPersediaanTree) ----
    Tiap folder = SATU baris penuh ke samping (nama, kode, ringkasan, tombol +Sub/Edit/Hapus/Buka
@@ -2001,24 +2008,62 @@ function initBudgetingMenuTopbarShortcut(){
 }
 /* Tombol "Tambah" di pojok paling kanan bottom bar (lihat renderBottomNav, id bnAddJurnal):
    dibuka dari mana saja (tab apapun) untuk input transaksi cepat langsung ke Jurnal Umum,
-   tanpa perlu pindah ke tab Jurnal Umum dulu. Formnya sengaja lebih ringkas dari form
-   "Tambah Jurnal" biasa (cuma 1 pasang Debit/Kredit, tanpa opsi Amortisasi/Reminder
-   Payment/Diskon) — untuk kasus itu tetap pakai form lengkap di tab Jurnal Umum.
+   tanpa perlu pindah ke tab Jurnal Umum dulu. Formnya lebih ringkas dari form "Tambah Jurnal"
+   biasa (cuma 1 pasang Debit/Kredit, tanpa opsi Diskon), tapi tetap menyertakan Reminder
+   Payment (khusus akun hutang/KW) & Amortisasi supaya transaksi hutang atau bayar-dimuka bisa
+   langsung dicatat dengan benar dari sini tanpa perlu pindah ke tab Jurnal Umum.
 */
 function openQuickAddJurnalModal(){
   const m = openFormModal('Tambah Transaksi Cepat', `
     <div class="formgrid">
       <div class="field"><label>Tanggal</label><input type="date" id="qjTgl" value="${todayStr()}"></div>
-      <div class="field" style="grid-column:span 3"><label>Keterangan</label><textarea id="qjKet" rows="2" placeholder="Deskripsi transaksi"></textarea></div>
+      <div class="field"><label>No Transaksi</label><input type="text" id="qjNoTransaksi" value="${DB.jurnal.length+1}" disabled></div>
+      <div class="field" style="grid-column:span 2"><label>Keterangan</label><textarea id="qjKet" rows="2" placeholder="Deskripsi transaksi"></textarea></div>
       <div class="field"><label>Akun Debit</label>${akunPickerHtml('qjDebit', null, 'Ketik nama akun...')}</div>
       <div class="field"><label>Akun Kredit</label>${akunPickerHtml('qjKredit', null, 'Ketik nama akun...')}</div>
-      <div class="field" style="grid-column:span 2"><label>Nominal</label><input type="text" inputmode="decimal" id="qjNominal" class="rupiah-input" placeholder="Rp 0"></div>
     </div>
-    <div class="formgrid" style="margin-top:8px">${tagInputHtml('qjTagInput')}${buktiUploadHtml('qjBukti')}</div>
+    <div id="qjReminderWrap" style="display:none;margin-top:4px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0;font-size:12.5px"><input type="checkbox" id="qjReminderCheck" style="width:16px;height:16px;flex:none"> Reminder Payment (khusus akun hutang)</label>
+      <input type="date" id="qjReminderTgl" style="display:none;margin-top:4px;max-width:200px">
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:12px;margin-top:8px;flex-wrap:wrap">
+      <div class="field" style="flex:1;min-width:140px;margin-bottom:0"><label>Nominal</label><input type="text" inputmode="decimal" id="qjNominal" class="rupiah-input" placeholder="Rp 0"></div>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:8px;font-size:12.5px;white-space:nowrap;flex:none"><input type="checkbox" id="qjAmorCheck" style="width:16px;height:16px;flex:none"> Amortisasi</label>
+      <div style="flex:none;margin-bottom:0">${buktiUploadHtml('qjBukti')}</div>
+    </div>
+    <div id="qjAmorWrap" style="display:none;margin-top:6px">
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:nowrap">
+        <div class="field" style="flex:none;width:110px"><label>Jumlah Hari</label><input type="number" min="1" id="qjAmorHari" placeholder="mis. 30"></div>
+        <div class="field" style="flex:1;min-width:0"><label>Akun Dibayar Di Muka</label>${akunPickerHtml('qjAktiva', a=>a.kategori==='ALL', 'Ketik nama akun aktiva...')}</div>
+      </div>
+    </div>
     <button class="btn primary btn-blue" id="qjSave" style="margin-top:10px;width:100%">Posting Jurnal</button>
   `, 'quickAddJurnalModal');
   bindAllAkunPickers(m);
   bindBuktiUpload('qjBukti');
+  // Kalau Akun Kredit yang dipilih berkategori Kewajiban (KW/hutang), munculkan kolom "Reminder
+  // Payment" — sama pola dengan baris Kredit di form "Tambah Jurnal" lengkap (lihat renderJurnalRowsHtml)
+  // — supaya tanggal pengingat jatuh tempo pembayaran hutang dari transaksi cepat ini juga bisa
+  // muncul di daftar "Reminder: Pembayaran Hutang" pada Beranda (Dashboard).
+  const qjReminderWrap = document.getElementById('qjReminderWrap');
+  const qjReminderCheck = document.getElementById('qjReminderCheck');
+  const qjReminderTgl = document.getElementById('qjReminderTgl');
+  function updateQjReminderVisibility(){
+    const akun = akunById(document.getElementById('qjKredit').value);
+    const isHutang = !!(akun && akun.kategori==='KW');
+    qjReminderWrap.style.display = isHutang ? '' : 'none';
+    if(!isHutang){ qjReminderCheck.checked=false; qjReminderTgl.style.display='none'; qjReminderTgl.value=''; }
+  }
+  AKUN_PICKER_ONSELECT['qjKredit'] = updateQjReminderVisibility;
+  qjReminderCheck.addEventListener('change', ()=>{
+    qjReminderTgl.style.display = qjReminderCheck.checked ? '' : 'none';
+    if(!qjReminderCheck.checked) qjReminderTgl.value='';
+  });
+  const qjAmorCheck = document.getElementById('qjAmorCheck');
+  const qjAmorWrap = document.getElementById('qjAmorWrap');
+  qjAmorCheck.addEventListener('change', ()=>{
+    qjAmorWrap.style.display = qjAmorCheck.checked ? 'block' : 'none';
+  });
   m.querySelector('#qjSave').addEventListener('click', ()=>{
     const tgl = document.getElementById('qjTgl').value;
     const ket = document.getElementById('qjKet').value;
@@ -2029,12 +2074,36 @@ function openQuickAddJurnalModal(){
     if(!debitId || !kreditId) return toast('Lengkapi akun debit & kredit');
     if(debitId===kreditId) return toast('Akun debit & kredit tidak boleh sama');
     if(!nom || nom<=0) return toast('Nominal tidak valid');
-    const tags = parseTagInput(document.getElementById('qjTagInput').value); tags.forEach(ensureTag);
+    const reminderPayment = qjReminderCheck.checked;
+    const reminderTanggal = qjReminderTgl.value;
+    if(reminderPayment && !reminderTanggal) return toast('Isi Tanggal Reminder untuk akun hutang yang dicentang Reminder Payment');
+    const amortisasi = qjAmorCheck.checked;
+    const amorHari = Number(document.getElementById('qjAmorHari').value);
+    const aktivaId = document.getElementById('qjAktiva').value;
+    if(amortisasi){
+      if(!aktivaId) return toast('Pilih Akun Aktiva untuk transaksi yang dicentang Amortisasi');
+      if(!(amorHari>0)) return toast('Isi jumlah hari amortisasi');
+    }
+    const tags = [];
     const bukti = BUKTI_PENDING['qjBukti'].length ? BUKTI_PENDING['qjBukti'] : null;
-    postJurnal({ tanggal:tgl, keterangan:ket, debitId, kreditId, nominal:nom, sumber:'Jurnal Umum', ref:'jurnal-manual-'+uid(), tags, bukti });
-    save(); m.remove();
-    if(currentTab==='jurnal') renderContent();
-    toast('Jurnal diposting');
+    if(amortisasi){
+      // Sama seperti baris Debit "Amortisasi" di form Jurnal Umum lengkap: nominal diposting dulu ke
+      // Akun Aktiva (dibayar dimuka), lalu diprorata otomatis setiap hari ke Akun Debit asli (beban)
+      // lewat mesin amortisasi harian yang sama dengan menu Biaya (jalankanAutoAmortisasi).
+      const biayaObj = { id:uid(), tanggal:tgl, bayarId:kreditId, bebanId:debitId, keterangan:ket, nominal:nom, amortisasi:true, periodeAmor:'hari', jumlahPeriode:amorHari, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null, prepaidId:aktivaId };
+      DB.biaya.push(biayaObj);
+      markDirtySync(biayaObj.id);
+      postJurnal({ tanggal:tgl, keterangan:'Bayar dimuka: '+(ket||akunById(debitId)?.nama||''), debitId:aktivaId, kreditId, nominal:nom, sumber:'Biaya', ref:'biaya-bayar-'+biayaObj.id, tags, bukti });
+      jalankanAutoAmortisasi();
+      save(); m.remove();
+      if(currentTab==='jurnal') renderContent();
+      toast('Jurnal diposting — diamortisasi otomatis setiap hari');
+    } else {
+      postJurnal({ tanggal:tgl, keterangan:ket, debitId, kreditId, nominal:nom, sumber:'Jurnal Umum', ref:'jurnal-manual-'+uid(), tags, bukti, reminderPayment, reminderTanggal: reminderPayment? reminderTanggal : null });
+      save(); m.remove();
+      if(currentTab==='jurnal') renderContent();
+      toast('Jurnal diposting');
+    }
   });
 }
 
@@ -6456,7 +6525,7 @@ function toArr(bukti){
   return Array.isArray(bukti) ? bukti : [bukti];
 }
 function buktiUploadHtml(id){
-  return `<div class="field"><label>Bukti Foto (opsional, bisa lebih dari 1)</label><div id="${id}_holder">${buktiHolderInner(id, [])}</div></div>`;
+  return `<div class="field"><div id="${id}_holder">${buktiHolderInner(id, [])}</div></div>`;
 }
 function buktiHolderInner(id, arr){
   arr = arr||[];
@@ -8477,7 +8546,7 @@ function renderJurnalRowsHtml(){
     // yang diisi (mendaur ulang mesin amortisasi harian yang sama dengan menu Biaya).
     const amorHtml = (r.tipe==='debit') ? `
     <div class="jrow-amor" data-rid="${r.rid}" style="margin:-4px 0 10px 72px">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0;font-size:12.5px"><input type="checkbox" id="jRowAmorCheck_${r.rid}" class="jRowAmorCheck" style="width:16px;height:16px;flex:none" ${r.amortisasi?'checked':''}> Amortisasi (prorata ke beban sesuai jumlah hari)</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0;font-size:12.5px"><input type="checkbox" id="jRowAmorCheck_${r.rid}" class="jRowAmorCheck" style="width:16px;height:16px;flex:none" ${r.amortisasi?'checked':''}> Amortisasi</label>
       <div class="formgrid" id="jRowAmorWrap_${r.rid}" style="display:${r.amortisasi?'grid':'none'};margin-top:6px">
         <div class="field"><label>Jumlah Hari</label><input type="number" min="1" id="jRowAmorHari_${r.rid}" class="jRowAmorHari" value="${r.amortisasiHari||30}"></div>
         <div class="field" style="grid-column:span 2"><label>Akun Aktiva (dibayar dimuka)</label>${akunPickerHtml('jRowAktiva_'+r.rid, a=>a.kategori==='ALL', 'Ketik nama akun aktiva...', r.aktivaId)}</div>
@@ -8757,13 +8826,6 @@ RENDERERS.jurnal = function(c){
     </div>
     <div class="mini" style="margin:6px 0">Tambahkan baris sebanyak yang dibutuhkan — total Debit dan total Kredit harus sama sebelum bisa diposting.</div>
     ${renderJurnalRowsHtml()}
-    <div class="mini" style="margin:10px 0 0" >
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="jDiskonCheck" style="width:16px;height:16px;flex:none"> Diskon</label>
-      <div class="formgrid" id="jDiskonWrap" style="display:none;margin-top:6px">
-        <div class="field"><label>Nominal Diskon</label><input type="text" inputmode="decimal" id="jDiskonNominal" class="rupiah-input" placeholder="Rp 0"></div>
-        <div class="mini" style="grid-column:span 3">Nominal ini tidak mempengaruhi nominal transaksi di atas, namun otomatis diposting ke akun Diskon Transaksi (Laba Rugi Komprehensif).</div>
-      </div>
-    </div>
     <div class="formgrid" style="margin-top:8px">${tagInputHtml('jTagInput')}${buktiUploadHtml('jBukti')}</div>
     <button class="btn primary btn-blue" id="btnPostJurnal" style="margin-top:8px">Posting Jurnal</button>
   </div>
@@ -8777,11 +8839,6 @@ RENDERERS.jurnal = function(c){
   <div id="jurnalRiwayatImporWrap"></div></div>`;
   c.innerHTML = html;
   bindJurnalRows();
-  document.getElementById('jDiskonCheck').addEventListener('change', e=>{
-    const w = document.getElementById('jDiskonWrap');
-    if(w) w.style.display = e.target.checked ? 'grid' : 'none';
-    if(!e.target.checked) jDiskonNominal.value='';
-  });
   bindBuktiUpload('jBukti');
   bindIoToolbar('jurnal', jurnalIoCfg());
   document.getElementById('jurnalBtnExpXlsx').addEventListener('click', ()=> openJurnalExportModal('excel'));
@@ -8811,18 +8868,6 @@ RENDERERS.jurnal = function(c){
     // lalu dilekatkan ke tiap pasangan Debit/Kredit hasil split yang memakai akun itu.
     const kreditReminderRows = jurnalRows.filter(r=> r.tipe==='kredit' && r.akunId && rupiahToNumber(r.nominal)>0 && r.reminderPayment);
     for(const r of kreditReminderRows){ if(!r.reminderTanggal) return toast('Isi Tanggal Reminder untuk akun hutang yang dicentang Reminder Payment'); }
-    // Centang "Diskon": nominal ini TIDAK ikut ditotal ke Debit/Kredit transaksi di atas (tidak mempengaruhi
-    // nominal transaksi), tapi otomatis diposting sebagai entri jurnal terpisah yang mengkredit akun
-    // "Diskon Transaksi" (kategori PK, masuk baris Laba Rugi Komprehensif) dengan lawan akun Debit
-    // pertama pada transaksi ini (mis. akun kas/persediaan yang dipakai), supaya tetap balance.
-    const diskonChecked = !!(document.getElementById('jDiskonCheck') && jDiskonCheck.checked);
-    const diskonNominal = diskonChecked ? (rupiahToNumber(jDiskonNominal.value)||0) : 0;
-    let diskonAkun = null;
-    if(diskonChecked){
-      if(diskonNominal<=0) return toast('Isi Nominal Diskon');
-      diskonAkun = DB.coa.find(a=> a.kode==='PK-001' || (a.nama||'').trim().toLowerCase()==='diskon transaksi');
-      if(!diskonAkun) return toast('Akun "Diskon Transaksi" tidak ditemukan di Daftar Akun');
-    }
     const reminderByKreditId = {};
     kreditReminderRows.forEach(r=>{ reminderByKreditId[r.akunId] = r.reminderTanggal; });
     const rowByRid = {}; debitRows.forEach(r=> rowByRid[r.rid]=r);
@@ -8852,14 +8897,10 @@ RENDERERS.jurnal = function(c){
       }
     });
     if(adaAmor) jalankanAutoAmortisasi();
-    if(diskonChecked && diskonAkun){
-      postJurnal({ tanggal:jTgl.value, keterangan:'Diskon: '+(jKet.value||''), debitId:debitLines[0].akunId, kreditId:diskonAkun.id, nominal:diskonNominal, sumber:'Jurnal Umum', ref:groupRef, tags, bukti });
-    }
     save();
     jKet.value=''; jTagInput.value='';
     jurnalRows = [{rid:uid(),tipe:'debit',akunId:'',nominal:''},{rid:uid(),tipe:'kredit',akunId:'',nominal:''}];
-    jDiskonCheck.checked=false; jDiskonNominal.value=''; document.getElementById('jDiskonWrap').style.display='none';
-    renderContent(); toast('Jurnal diposting ('+pairs.length+' baris)'+(adaAmor?' — sebagian diamortisasi otomatis setiap hari':'')+(diskonChecked?' + diskon Rp'+fmtNum(diskonNominal,0):''));
+    renderContent(); toast('Jurnal diposting ('+pairs.length+' baris)'+(adaAmor?' — sebagian diamortisasi otomatis setiap hari':''));
   });
 };
 
@@ -9213,13 +9254,6 @@ RENDERERS.biaya = function(c){
       <div class="field" style="grid-column:span 2"><label>Akun Dibayar Dimuka (aset)</label>${akunPickerHtml('bPrepaid', a=>a.kategori==='ALL', 'Ketik nama akun dibayar dimuka...')}</div>
       <div class="mini" style="grid-column:span 2;align-self:center">Diposting <b>otomatis setiap hari</b> saat jatuh tempo — tidak perlu diposting manual.</div>
     </div>
-    <div class="mini" style="margin:10px 0 0">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="bDiskonCheck" style="width:16px;height:16px;flex:none"> Diskon</label>
-      <div class="formgrid" id="bDiskonWrap" style="display:none;margin-top:6px">
-        <div class="field"><label>Nominal Diskon</label><input type="text" inputmode="decimal" id="bDiskonNominal" class="rupiah-input" placeholder="Rp 0"></div>
-        <div class="mini" style="grid-column:span 3">Nominal ini tidak mempengaruhi nominal biaya di atas, namun otomatis diposting ke akun Diskon Transaksi (Laba Rugi Komprehensif).</div>
-      </div>
-    </div>
     <div class="formgrid">${tagInputHtml('bTagInput')}${buktiUploadHtml('bBukti')}</div>
     <button class="btn primary" id="btnPostBiaya">Simpan Biaya</button>
   </div>
@@ -9235,11 +9269,6 @@ RENDERERS.biaya = function(c){
   renderBiayaTable();
 
   document.getElementById('bAmor').addEventListener('change', e=>{ document.getElementById('bPeriodeWrap').style.display = e.target.checked?'grid':'none'; });
-  document.getElementById('bDiskonCheck').addEventListener('change', e=>{
-    const w = document.getElementById('bDiskonWrap');
-    if(w) w.style.display = e.target.checked ? 'grid' : 'none';
-    if(!e.target.checked) document.getElementById('bDiskonNominal').value='';
-  });
   document.getElementById('biayaSearchInput').addEventListener('input', e=>{ biayaSearch=e.target.value; setPage('biaya',1); renderBiayaTable(); });
   document.getElementById('biayaSortInput').addEventListener('change', e=>{ biayaSort=e.target.value; setPage('biaya',1); renderBiayaTable(); });
   document.getElementById('biayaStatusFilterInput').addEventListener('change', e=>{ biayaStatusFilter=e.target.value; setPage('biaya',1); renderBiayaTable(); });
@@ -9271,14 +9300,6 @@ RENDERERS.biaya = function(c){
     if(!bayarId||!bebanId) return toast('Lengkapi akun');
     if(!nominal||nominal<=0) return toast('Isi nominal');
     if(amortisasi && !prepaidId) return toast('Pilih akun Dibayar Dimuka (aset) yang sesuai');
-    const diskonChecked = !!(document.getElementById('bDiskonCheck') && bDiskonCheck.checked);
-    const diskonNominal = diskonChecked ? (rupiahToNumber(document.getElementById('bDiskonNominal').value)||0) : 0;
-    let diskonAkun = null;
-    if(diskonChecked){
-      if(diskonNominal<=0) return toast('Isi Nominal Diskon');
-      diskonAkun = DB.coa.find(a=> a.kode==='PK-001' || (a.nama||'').trim().toLowerCase()==='diskon transaksi');
-      if(!diskonAkun) return toast('Akun "Diskon Transaksi" tidak ditemukan di Daftar Akun');
-    }
     const akunBayar = akunById(bayarId);
     const isHutang = !!(akunBayar && akunBayar.kategori==='KW');
     const reminderPayment = isHutang && bReminderCheck.checked;
@@ -9293,22 +9314,15 @@ RENDERERS.biaya = function(c){
       postJurnal({ tanggal:bTgl.value, keterangan:'Bayar dimuka: '+(bKet.value||akunById(bebanId).nama), debitId:prepaid.id, kreditId:bayarId, nominal, sumber:'Biaya', ref:'biaya-bayar-'+biayaObj.id, tags, bukti });
       biayaObj.prepaidId = prepaid.id;
       jalankanAutoAmortisasi();
-      if(diskonChecked && diskonAkun){
-        postJurnal({ tanggal:bTgl.value, keterangan:'Diskon: '+(bKet.value||''), debitId:prepaid.id, kreditId:diskonAkun.id, nominal:diskonNominal, sumber:'Biaya', ref:'biaya-bayar-'+biayaObj.id, tags, bukti });
-      }
     } else {
       postJurnal({ tanggal:bTgl.value, keterangan:biayaObj.keterangan||akunById(bebanId).nama, debitId:bebanId, kreditId:bayarId, nominal, sumber:'Biaya', ref:'biaya-'+biayaObj.id, tags, bukti });
-      if(diskonChecked && diskonAkun){
-        postJurnal({ tanggal:bTgl.value, keterangan:'Diskon: '+(bKet.value||''), debitId:bebanId, kreditId:diskonAkun.id, nominal:diskonNominal, sumber:'Biaya', ref:'biaya-'+biayaObj.id, tags, bukti });
-      }
     }
     save();
     bKet.value=''; bNom.value=''; bTagInput.value=''; bAmor.checked=false; document.getElementById('bPeriodeWrap').style.display='none';
     setAkunPickerValue('bBayar', null); setAkunPickerValue('bBeban', null); setAkunPickerValue('bPrepaid', null);
     resetBuktiUpload('bBukti');
     bReminderCheck.checked=false; bReminderTgl.value=''; bReminderTgl.style.display='none'; bReminderWrap.style.display='none';
-    bDiskonCheck.checked=false; document.getElementById('bDiskonNominal').value=''; document.getElementById('bDiskonWrap').style.display='none';
-    renderBiayaTable(); toast('Biaya tersimpan'+(diskonChecked?' + diskon Rp'+fmtNum(diskonNominal,0):''));
+    renderBiayaTable(); toast('Biaya tersimpan');
   });
 };
 
@@ -9432,6 +9446,18 @@ function openFormModal(title, bodyHtml, id){
    the per-akun drilldown) — unlike the old prompt()-chain, this also allows changing the
    debit/kredit account itself, not just tanggal/keterangan/nominal. */
 function openEditJurnalModal(j){
+  /* Kalau baris yang diedit ini adalah transaksi UTAMA "Bayar dimuka" (ref 'biaya-bayar-<id>')
+     dari sebuah Biaya beramortisasi, tampilkan juga kolom "Akun Beban" di form ini (biasanya
+     hanya ada di form "Ubah Biaya"). Ini supaya kalau akun beban diubah dari sini, seluruh baris
+     jurnal turunan amortisasi yang SUDAH terposting ('biaya-amor-<id>-N') ikut dipindah akun
+     debitnya, sama seperti akun Debit (DBM) yang sudah lebih dulu disinkronkan ke akun Kredit
+     baris turunan di bawah. */
+  const biayaIdForEdit = biayaIdFromRef(j.ref);
+  let bebanBiayaObj = null;
+  if(biayaIdForEdit){
+    const bb = DB.biaya.find(x=>x.id===biayaIdForEdit);
+    if(bb && bb.amortisasi && (j.ref||'')===('biaya-bayar-'+biayaIdForEdit)) bebanBiayaObj = bb;
+  }
   const m = openFormModal('Ubah Transaksi', `
     <div class="formgrid">
       <div class="field" style="grid-column:span 2"><label>Tanggal</label><input type="date" id="ejTgl" value="${j.tanggal}"></div>
@@ -9439,12 +9465,14 @@ function openEditJurnalModal(j){
       <div class="field"><label>Akun Debit</label>${akunPickerHtml('ejDebit', null, 'Ketik nama akun...', j.debitId)}</div>
       <div class="field"><label>Akun Kredit</label>${akunPickerHtml('ejKredit', null, 'Ketik nama akun...', j.kreditId)}</div>
       <div class="field" style="grid-column:span 2"><label>Nominal</label><input type="text" inputmode="decimal" id="ejNom" class="rupiah-input" value="${fmtRpInputFromAny(j.nominal)}"></div>
+      ${bebanBiayaObj?`<div class="field" style="grid-column:span 2"><label>Akun Beban (amortisasi)</label>${akunPickerHtml('ejBeban', a=>['BPP','BO','BL'].includes(a.kategori), 'Ketik nama beban...', bebanBiayaObj.bebanId)}</div>`:''}
     </div>
     <div class="formgrid" style="margin-top:8px">${tagInputHtml('ejTagInput', {initialValue:(j.tags||[]).join(', ')})}</div>
     <div id="ejReminderWrap" style="display:none;margin-top:10px">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0;font-size:12.5px"><input type="checkbox" id="ejReminderCheck" style="width:16px;height:16px;flex:none" ${j.reminderPayment?'checked':''}> Reminder Payment</label>
       <input type="date" id="ejReminderTgl" style="display:${j.reminderPayment?'':'none'};margin-top:6px" value="${j.reminderTanggal||''}">
     </div>
+    ${bebanBiayaObj?'<div class="mini" style="margin-top:6px">Mengubah Akun Beban di sini akan ikut memindahkan seluruh baris amortisasi yang sudah terposting ke akun beban yang baru.</div>':''}
     <button class="btn primary" id="ejSave" style="margin-top:10px;width:100%">Simpan Perubahan</button>
   `, 'editJurnalModal');
   bindAllAkunPickers(m);
@@ -9481,10 +9509,57 @@ function openEditJurnalModal(j){
     const isHutang = !!(akunKredit && akunKredit.kategori==='KW');
     const reminderPayment = isHutang && ejReminderCheck.checked;
     if(reminderPayment && !ejReminderTgl.value) return toast('Isi Tanggal Reminder untuk akun hutang yang dicentang Reminder Payment');
+    /* Kalau baris yang diedit ini adalah transaksi UTAMA "Bayar dimuka" (ref 'biaya-bayar-<id>')
+       dari sebuah Biaya beramortisasi — bukan salah satu baris turunan amortisasinya sendiri
+       ('biaya-amor-<id>-N') — dan akun Debit (Akun Dibayar Dimuka/DBM) atau akun Kredit (Dibayar
+       Melalui) di sini diubah, ikutkan perubahan itu ke: (1) objek DB.biaya terkait supaya
+       posting amortisasi BERIKUTNYA (lewat jalankanAutoAmortisasi) memakai akun yang baru, dan
+       (2) seluruh baris jurnal turunan amortisasi yang SUDAH terposting, supaya akun Kredit-nya
+       (yang seharusnya = akun DBM yang sama) ikut berpindah mengikuti akun DBM baru — tanpa ini,
+       baris² amortisasi lama akan tetap merujuk akun DBM lama sehingga saldo akun lama/baru jadi
+       tidak nyambung dengan baris "Bayar dimuka"-nya. */
+    const biayaId = biayaIdFromRef(j.ref);
+    if(biayaId){
+      const b = DB.biaya.find(x=>x.id===biayaId);
+      if(b && b.amortisasi && (j.ref||'')===('biaya-bayar-'+biayaId)){
+        const oldPrepaidId = b.prepaidId;
+        if(oldPrepaidId && debitId!==oldPrepaidId){
+          DB.jurnal.forEach(x=>{
+            if((x.ref||'').indexOf('biaya-amor-'+biayaId+'-')===0 && x.kreditId===oldPrepaidId){
+              x.kreditId = debitId;
+              markDirtySync(x.id);
+            }
+          });
+          b.prepaidId = debitId;
+        }
+        if(b.bayarId!==kreditId) b.bayarId = kreditId;
+        /* Kolom "Akun Beban" (ejBeban) cuma dimunculkan untuk kasus ini juga (lihat awal fungsi).
+           Kalau diubah, pindahkan akun Debit seluruh baris amortisasi yang SUDAH terposting dari
+           akun beban lama ke yang baru, supaya tetap nyambung dengan akun beban baru di baris
+           "Bayar dimuka" ini — sama pola dengan sinkronisasi akun DBM (prepaid) di atas. */
+        const ejBebanEl = document.getElementById('ejBeban');
+        if(ejBebanEl){
+          const bebanIdBaru = ejBebanEl.value;
+          if(!bebanIdBaru) return toast('Lengkapi Akun Beban');
+          const oldBebanId = b.bebanId;
+          if(oldBebanId && bebanIdBaru!==oldBebanId){
+            DB.jurnal.forEach(x=>{
+              if((x.ref||'').indexOf('biaya-amor-'+biayaId+'-')===0 && x.debitId===oldBebanId){
+                x.debitId = bebanIdBaru;
+                markDirtySync(x.id);
+              }
+            });
+            b.bebanId = bebanIdBaru;
+          }
+        }
+        markDirtySync(b.id);
+      }
+    }
     j.tanggal = tgl; j.keterangan = ket; j.debitId = debitId; j.kreditId = kreditId; j.nominal = nom; j.tags = tags;
     j.reminderPayment = reminderPayment;
     j.reminderTanggal = reminderPayment ? ejReminderTgl.value : null;
     if(!reminderPayment) j.reminderLunas = false;
+    markDirtySync(j.id);
     save(); m.remove(); document.getElementById('detailDrawer')?.remove(); renderContent(); toast('Transaksi diperbarui');
   });
 }
@@ -10421,10 +10496,6 @@ RENDERERS.pembelian = function(c){
       <div class="field" id="pKetWrap"><label>Keterangan</label><textarea id="pKet" rows="2" placeholder="mis. beli di Pasar Sentral"></textarea></div>
       <div class="field" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="pAmorCheck" style="width:16px;height:16px;flex:none"> Amortisasi (prorata beban sesuai jumlah hari)</label></div>
       <div class="field" id="pAmorWrap" style="display:none;grid-column:span 2"><label>Jumlah Hari Amortisasi</label><input type="number" id="pAmorHari" min="1" value="30" placeholder="mis. 30"></div>
-      <div class="field" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="pDiskonCheck" style="width:16px;height:16px;flex:none"> Diskon</label></div>
-      <div class="field" id="pDiskonWrap" style="display:none;grid-column:span 2"><label>Nominal Diskon</label><input type="text" inputmode="decimal" id="pDiskonNominal" class="rupiah-input" placeholder="Rp 0">
-        <div class="mini" style="margin-top:4px">Nominal ini tidak mempengaruhi harga transaksi di atas, namun otomatis diposting ke akun Diskon Transaksi (Laba Rugi Komprehensif).</div>
-      </div>
     </div>
     <div style="margin-bottom:8px">${infoNoteHtml('Amortisasi pembelian', `Kalau dicentang, nilai pembelian bahan/barang ini tidak langsung jadi beban, tapi diprorata (dibagi rata) ke Akun Beban BPP (saat stok habis/dipakai) item ini selama jumlah hari yang diisi — diposting <b>otomatis setiap hari</b> selama masa amortisasi berjalan, mirip amortisasi harian di menu Biaya. Qty stok item ini juga otomatis ikut berkurang bertahap setiap hari sesuai proporsinya, jadi <b>tidak perlu stock opname manual</b> saat barang/bahan ini habis terpakai.`)}</div>
     <div style="margin-bottom:8px">${infoNoteHtml('Beli beberapa produk sekaligus?', `Butuh beberapa produk dalam satu pembelian (satu struk/nota)? Isi Nama Bahan/Barang, Qty &amp; Total Harga di atas lalu klik <b>+ Tambah ke Daftar</b> untuk tiap produk. Tanggal, akun kredit, tag &amp; bukti di bawah berlaku untuk semua produk dalam daftar.`)}</div>
@@ -10528,13 +10599,6 @@ RENDERERS.pembelian = function(c){
     pAmorWrap.style.display = on ? '' : 'none';
     if(!on){ document.getElementById('pAmorHari').value='30'; }
   });
-  const pDiskonCheck = document.getElementById('pDiskonCheck');
-  const pDiskonWrap = document.getElementById('pDiskonWrap');
-  pDiskonCheck.addEventListener('change', ()=>{
-    const on = pDiskonCheck.checked;
-    pDiskonWrap.style.display = on ? '' : 'none';
-    if(!on){ document.getElementById('pDiskonNominal').value=''; }
-  });
   document.getElementById('pembelianSearchInput').addEventListener('input', e=>{ pembelianSearch=e.target.value; setPage('pembelian',1); renderPembelianTable(); });
   document.getElementById('pembelianSortInput').addEventListener('change', e=>{ pembelianSort=e.target.value; setPage('pembelian',1); renderPembelianTable(); });
 
@@ -10547,9 +10611,8 @@ RENDERERS.pembelian = function(c){
     const rows = pembelianCart.map(l=>{
       const ket = l.keterangan ? ` <span class="mini">(${escHtml(l.keterangan)})</span>` : '';
       const amorLabel = l.amortisasi ? `<div class="mini">Amortisasi ${l.amortisasiHari||0} hari</div>` : '';
-      const diskonLabel = l.diskon ? `<div class="mini">Diskon ${fmtRp(l.diskonNominal||0)}</div>` : '';
       return `<tr>
-        <td>${escHtml(l.itemNama)}${ket}<div class="mini">${l.tipe==='barang'?'Barang':'Bahan'}</div>${amorLabel}${diskonLabel}</td>
+        <td>${escHtml(l.itemNama)}${ket}<div class="mini">${l.tipe==='barang'?'Barang':'Bahan'}</div>${amorLabel}</td>
         <td style="white-space:nowrap">${fmtNum(l.qty)} ${escHtml(l.satuan||'')}</td>
         <td style="text-align:right;white-space:nowrap">${fmtRp(l.total)}</td>
         <td><button type="button" class="btn small" data-cid="${l.cid}">Hapus</button></td>
@@ -10589,15 +10652,12 @@ RENDERERS.pembelian = function(c){
     const akunBebanOpVal = document.getElementById('pBebanOp')?.value || item.akunBebanId || '';
     if(amortisasi && (amortisasiHari<=0)){ if(!silent) toast('Isi jumlah hari amortisasi'); return false; }
     if(amortisasi && !akunBebanOpVal){ if(!silent) toast('Isi Akun Beban BPP (saat stok habis/dipakai) dulu — dipakai juga sebagai tujuan beban amortisasi'); return false; }
-    const diskon = !!(document.getElementById('pDiskonCheck')?.checked);
-    const diskonNominal = diskon ? (rupiahToNumber(document.getElementById('pDiskonNominal')?.value)||0) : 0;
-    if(diskon && diskonNominal<=0){ if(!silent) toast('Isi Nominal Diskon'); return false; }
     pembelianCart.push({
       cid: uid(), tipe: isBarangNow?'barang':'bahan', refId, itemNama: item.nama, satuan: item.satuan||'',
       qty, total, keterangan: pKet.value||'', kadaluwarsa,
       akunBebanOverride: document.getElementById('pBebanOp')?.value||'',
       akunPersediaanOverride: document.getElementById('pAkunPersediaan')?.value||'',
-      amortisasi, amortisasiHari, diskon, diskonNominal
+      amortisasi, amortisasiHari
     });
     pKet.value=''; pQty.value=''; pTotal.value='';
     if(kadaluwarsaEl) kadaluwarsaEl.value='';
@@ -10609,11 +10669,6 @@ RENDERERS.pembelian = function(c){
       document.getElementById('pAmorCheck').checked=false;
       document.getElementById('pAmorWrap').style.display='none';
       document.getElementById('pAmorHari').value='30';
-    }
-    if(document.getElementById('pDiskonCheck')){
-      document.getElementById('pDiskonCheck').checked=false;
-      document.getElementById('pDiskonWrap').style.display='none';
-      document.getElementById('pDiskonNominal').value='';
     }
     renderPembelianCart();
     if(!silent) toast('Ditambahkan ke daftar');
@@ -10655,16 +10710,6 @@ RENDERERS.pembelian = function(c){
     const persediaanAkun = akunPersediaanUntuk(kepemilikan, tipeNow, akunItem);
     if(isAmor) pObj.amortisasiPrepaidId = persediaanAkun.id;
     postJurnal({ tanggal:shared.tanggal, keterangan:'Pembelian '+itemNama+' x'+line.qty+(line.keterangan?' ('+line.keterangan+')':''), debitId:persediaanAkun.id, kreditId:shared.bayarId, nominal:line.total, sumber:'Pembelian', ref:'pembelian-'+pObj.id, tags:shared.tags, bukti:shared.bukti });
-    // Centang "Diskon": nominal ini TIDAK ikut ditotal ke Qty/Total pembelian di atas (tidak mempengaruhi
-    // harga transaksi), tapi otomatis diposting sebagai entri jurnal terpisah yang mengkredit akun
-    // "Diskon Transaksi" (kategori PK, masuk baris Laba Rugi Komprehensif) dengan lawan akun Debit
-    // persediaan item ini, sama seperti fitur Diskon di Jurnal Umum.
-    if(line.diskon && Number(line.diskonNominal)>0){
-      const diskonAkun = DB.coa.find(a=> a.kode==='PK-001' || (a.nama||'').trim().toLowerCase()==='diskon transaksi');
-      if(diskonAkun){
-        postJurnal({ tanggal:shared.tanggal, keterangan:'Diskon: Pembelian '+itemNama+(line.keterangan?' ('+line.keterangan+')':''), debitId:persediaanAkun.id, kreditId:diskonAkun.id, nominal:Number(line.diskonNominal), sumber:'Pembelian', ref:'pembelian-'+pObj.id, tags:shared.tags, bukti:shared.bukti });
-      }
-    }
     if(!isBarangNow){
       const bulan = shared.tanggal.slice(0,7);
       const bud = DB.budgeting.find(x=> x.produkId===line.refId && x.tanggal.slice(0,7)===bulan);
@@ -10706,11 +10751,6 @@ RENDERERS.pembelian = function(c){
       document.getElementById('pAmorCheck').checked=false;
       document.getElementById('pAmorWrap').style.display='none';
       document.getElementById('pAmorHari').value='30';
-    }
-    if(document.getElementById('pDiskonCheck')){
-      document.getElementById('pDiskonCheck').checked=false;
-      document.getElementById('pDiskonWrap').style.display='none';
-      document.getElementById('pDiskonNominal').value='';
     }
     resetBuktiUpload('pBukti');
     renderPembelianCart();
@@ -16966,7 +17006,7 @@ function renderLabaRugiRingkasan(c){
   const kategoriBlockHtml = kat=>{
     const akunsKat = DB.coa.filter(a=>a.kategori===kat);
     const subtotal = sumByKategoriKepemilikanFiltered(kat, null, jlist);
-    let h = `<div style="margin-bottom:2px"><div style="font-weight:700;font-size:13px;color:#1a3c6e;background:#DBEAFE;display:inline-block;padding:4px 10px;border-radius:7px;margin-bottom:6px">${KAT[kat]}</div>`;
+    let h = `<div style="margin-bottom:2px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700;font-size:13px;color:#1a3c6e;background:#DBEAFE;padding:4px 10px;border-radius:7px;margin-bottom:6px"><span>${KAT[kat]}</span><span class="mini" style="font-weight:400">${fmtRp(subtotal)}${fmtPct(subtotal,totalPDBasis)}</span></div>`;
     // Rincian akun ditampilkan flat (tidak dikelompokkan per kepemilikan lagi) — semua akun
     // kategori ini strata-nya sama, supaya tidak ada akun yang hilang dari rincian gara-gara
     // field kepemilikan-nya tidak cocok dengan salah satu grup.
@@ -18929,13 +18969,6 @@ RENDERERS.aset = function(c){
       <div style="min-width:0">${tagInputHtml('asTagInput', {initialValue:(dupPre&&dupPre.tags?dupPre.tags.join(', '):'')})}</div>
       <div style="min-width:0">${buktiUploadHtml('asBukti')}</div>
     </div>
-    <div class="mini" style="margin:10px 0 0">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="asDiskonCheck" style="width:16px;height:16px;flex:none"> Diskon</label>
-      <div class="formgrid" id="asDiskonWrap" style="display:none;margin-top:6px">
-        <div class="field"><label>Nominal Diskon</label><input type="text" inputmode="decimal" id="asDiskonNominal" class="rupiah-input" placeholder="Rp 0"></div>
-        <div class="mini" style="grid-column:span 3">Nominal ini tidak mempengaruhi nominal transaksi di atas, namun otomatis diposting ke akun Diskon Transaksi (Laba Rugi Komprehensif).</div>
-      </div>
-    </div>
     <button class="btn primary btn-blue" id="btnAddAset">Simpan Aset</button>
     <datalist id="jenisAsetList">${DB.jenisAsetCustom.map(j=>`<option value="${j}">`).join('')}</datalist>
   </div>`}
@@ -18995,13 +19028,6 @@ RENDERERS.aset = function(c){
   }
   const asNonDepEl = document.getElementById('asNonDep');
   if(asNonDepEl){ asNonDepEl.addEventListener('change', updateAsetFormVisibility); updateAsetFormVisibility(); }
-  const asDiskonCheckEl = document.getElementById('asDiskonCheck');
-  if(asDiskonCheckEl) asDiskonCheckEl.addEventListener('change', e=>{
-    const w = document.getElementById('asDiskonWrap');
-    if(w) w.style.display = e.target.checked ? 'grid' : 'none';
-    if(!e.target.checked) document.getElementById('asDiskonNominal').value='';
-  });
-
   /* "Akun yang Dikreditkan": kalau akun yang dipilih berkategori Kewajiban (KW/hutang), munculkan
      kolom centang "Reminder Payment" — dicentang lalu isi Tanggal Reminder supaya muncul di Beranda
      (Dashboard) sebagai pengingat jatuh tempo pembayaran hutang perolehan aset ini. */
@@ -19048,14 +19074,6 @@ RENDERERS.aset = function(c){
     if(nonDepresiasi) masa = 0;
     const akunKreditId=asAkunKredit.value, akunAsetId=asAkunAset.value; let akunAkumId=asAkunAkum.value; let akunBebanId=asAkunBeban.value;
     if(!nama||!jenis||!biaya||!akunKreditId||!akunAsetId) return toast('Lengkapi data wajib (nama, jenis, biaya, akun kredit, akun aset)');
-    const asDiskonChecked = !!(document.getElementById('asDiskonCheck') && asDiskonCheck.checked);
-    const asDiskonNominal = asDiskonChecked ? (rupiahToNumber(document.getElementById('asDiskonNominal').value)||0) : 0;
-    let asDiskonAkun = null;
-    if(asDiskonChecked){
-      if(asDiskonNominal<=0) return toast('Isi Nominal Diskon');
-      asDiskonAkun = DB.coa.find(a=> a.kode==='PK-001' || (a.nama||'').trim().toLowerCase()==='diskon transaksi');
-      if(!asDiskonAkun) return toast('Akun "Diskon Transaksi" tidak ditemukan di Daftar Akun');
-    }
     const asReminderPayment = !!(asReminderWrap && asReminderWrap.style.display!=='none' && asReminderCheck.checked);
     if(asReminderPayment && !asReminderTgl.value) return toast('Isi Tanggal Reminder untuk akun hutang yang dicentang Reminder Payment');
     const asReminderTanggal = asReminderPayment ? asReminderTgl.value : null;
@@ -19085,19 +19103,11 @@ RENDERERS.aset = function(c){
     setItemRuangan(asetObj, ruanganBaru);
     DB.aset.push(asetObj);
     postJurnal({ tanggal:tgl, keterangan:'Perolehan aset: '+nama+' ('+noAset+')', debitId:akunAsetId, kreditId:akunKreditId, nominal:biaya, sumber:'Aset', ref:'aset-perolehan-'+asetObj.id, tags, bukti, reminderPayment:asReminderPayment, reminderTanggal:asReminderTanggal });
-    if(asDiskonChecked && asDiskonAkun){
-      postJurnal({ tanggal:tgl, keterangan:'Diskon: '+nama+' ('+noAset+')', debitId:akunAsetId, kreditId:asDiskonAkun.id, nominal:asDiskonNominal, sumber:'Aset', ref:'aset-perolehan-'+asetObj.id, tags, bukti });
-    }
     resetBuktiUpload('asBukti');
     if(asReminderCheck) asReminderCheck.checked=false;
     if(asReminderTgl){ asReminderTgl.value=''; asReminderTgl.style.display='none'; }
     if(asReminderWrap) asReminderWrap.style.display='none';
-    if(asDiskonCheckEl) asDiskonCheckEl.checked=false;
-    const asDiskonNominalEl = document.getElementById('asDiskonNominal');
-    if(asDiskonNominalEl) asDiskonNominalEl.value='';
-    const asDiskonWrapEl = document.getElementById('asDiskonWrap');
-    if(asDiskonWrapEl) asDiskonWrapEl.style.display='none';
-    save(); renderContent(); toast('Aset tersimpan, nomor: '+noAset + (asDiskonChecked?' + diskon Rp'+fmtNum(asDiskonNominal,0):''));
+    save(); renderContent(); toast('Aset tersimpan, nomor: '+noAset);
     if(isLogamMuliaAsset(asetObj) && asetObj.beratGram){ updateHargaPasarLogamMulia(asetObj); }
   });
 
