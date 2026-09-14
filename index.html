@@ -46,8 +46,8 @@
   --paper:#FFFFFF;
   --ink:#25384A;
   --ink-soft:#5C7385;
-  --terracotta:#C1603D;
-  --terracotta-dark:#9E4B2F;
+  --terracotta:#3B82F6;
+  --terracotta-dark:#2563EB;
   --sage:#7C8B6F;
   --sage-soft:#E4E9DE;
   --line:#D6E5F2;
@@ -86,8 +86,8 @@
   --paper:#16222E;
   --ink:#E4EDF5;
   --ink-soft:#9FB4C4;
-  --terracotta:#D9764F;
-  --terracotta-dark:#E8935F;
+  --terracotta:#5FA0E8;
+  --terracotta-dark:#8FC0F5;
   --sage:#8FA07F;
   --sage-soft:#2C3327;
   --line:#25384A;
@@ -168,8 +168,8 @@ table{border-collapse:collapse;width:100%}
   cursor:pointer;color:inherit;box-sizing:border-box;
 }
 .account-switcher-item:hover{background:var(--hover-bg,rgba(44,38,32,.06))}
-.account-switcher-item.active{font-weight:650;color:var(--terracotta)}
-.account-switcher-item-check{flex:none;color:var(--terracotta)}
+.account-switcher-item.active{font-weight:650;color:var(--accent,#3b82f6)}
+.account-switcher-item-check{flex:none;color:var(--accent,#3b82f6)}
 .account-switcher-divider{height:1px;background:var(--line,rgba(0,0,0,.1));margin:5px 3px}
 .account-switcher-manage{color:var(--sidebar-label,#8A7C68)}
 nav{padding:10px 10px 20px;flex:1}
@@ -230,7 +230,13 @@ nav{padding:10px 10px 20px;flex:1}
 .sync-percent{display:none;flex:none;margin-left:4px;font-size:10.5px;font-weight:700;color:#2E6DA4;min-width:28px;text-align:left;letter-spacing:.01em}
 .dirty-sync-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#B0432C;margin-right:6px;flex:none;vertical-align:middle}
 
-#content{padding:24px 28px 60px;width:100%;overflow-x:hidden}
+/* Catatan penting: JANGAN kasih overflow-x di #content tanpa overflow-y (mis. "overflow-x:hidden"
+   saja) — browser otomatis memaksa overflow-y jadi "auto" kalau cuma satu sumbu yang di-set,
+   dan itu bikin #content dianggap kontainer scroll bayangan (padahal yang benar-benar scroll
+   cuma #main, bapaknya). Akibatnya elemen position:sticky di dalamnya (mis. .tabs2-icon di
+   halaman Report/Inventory) jadi salah patokan & "lepas"/menggantung tidak wajar saat discroll.
+   Clipping horizontal overflow-nya cukup diserahkan ke #main yang sudah overflow-x:hidden. */
+#content{padding:24px 28px 60px;width:100%}
 
 /* ---- generic components ---- */
 .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow)}
@@ -353,7 +359,7 @@ table.sheet tbody td.num.center{text-align:center}
 /* ---- tag picker (chip + search + dropdown) ---- */
 .tagpicker{position:relative;width:100%;min-width:0;box-sizing:border-box}
 .tagpicker-box{display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%;min-width:0;box-sizing:border-box;min-height:38px;padding:5px 7px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);cursor:text}
-.tagpicker-box:focus-within{border-color:var(--terracotta);box-shadow:0 0 0 3px rgba(193,96,61,.12)}
+.tagpicker-box:focus-within{border-color:var(--accent,#3b82f6);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
 .tagpicker-chips{display:flex;flex-wrap:wrap;gap:5px;min-width:0;max-width:100%}
 .tagpicker-chip{display:inline-flex;align-items:center;gap:5px;background:var(--sage-soft);color:var(--sage);padding:3px 6px 3px 9px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
 .tagpicker-chip-x{border:none;background:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;opacity:.65}
@@ -369,7 +375,7 @@ table.sheet tbody td.num.center{text-align:center}
 .fitur-lain-menu .btn{width:100%;justify-content:flex-start;text-align:left}
 .tagpicker-dd-item{padding:7px 9px;border-radius:7px;font-size:13px;cursor:pointer}
 .tagpicker-dd-item:hover{background:var(--hover-bg)}
-.tagpicker-dd-new{color:var(--terracotta-dark);font-weight:600}
+.tagpicker-dd-new{color:var(--accent-dark,#2563eb);font-weight:600}
 .tagpicker-dd-empty{padding:7px 9px;font-size:12.5px;color:var(--ink-soft)}
 
 /* Kolom Lokasi (Persediaan Bahan/Barang): chip-chip lokasi membungkus rapi ke bawah kalau
@@ -397,7 +403,7 @@ table.sheet tbody td.num.center{text-align:center}
   width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);font-size:13.5px;color:var(--ink);
 }
 .field textarea{resize:vertical;min-height:38px}
-.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--terracotta);box-shadow:0 0 0 3px rgba(193,96,61,.12)}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent,#3b82f6);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
 
 .tabs2{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:0}
 .tabs2 button{background:none;border:none;padding:9px 14px;font-size:13.3px;font-weight:600;color:var(--ink-soft);border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -413,7 +419,10 @@ table.sheet tbody td.num.center{text-align:center}
    dibuat sticky, menempel tepat di bawah #topbar (yang juga sticky di atasnya). Nilai top
    dihitung & diisi lewat JS (lihat applyStickyTabsIcon) karena tinggi #topbar berubah-ubah
    (mis. di HP topbar jadi 2 baris), jadi tidak bisa dipatok satu angka tetap di CSS. */
-.tabs2-icon{position:sticky;z-index:4;background:var(--paper);top:0}
+/* padding-top di sini kasih sedikit "napas" antara garis bawah topbar & simbolnya sendiri,
+   supaya simbolnya kelihatan utuh (tidak mepet/kepotong) walau bar ini nempel persis di
+   bawah topbar saat sticky. */
+.tabs2-icon{position:sticky;z-index:4;background:var(--paper);top:0;padding-top:8px}
 /* ---- Tab ikon-saja (Report: Neraca/Laba Rugi/Buku Besar/Arus Kas/Perubahan Modal/Laporan
    Lengkap) dikecualikan dari warna oranye default .tabs2 button.active di atas — garis bawah
    & warna ikon aktifnya pakai biru (--accent) supaya konsisten dengan tema biru, tanpa
@@ -438,7 +447,7 @@ table.sheet tbody td.num.center{text-align:center}
 @media(max-width:820px){.two-col{grid-template-columns:1fr}}
 
 .loc-block{margin-bottom:16px}
-.loc-block h4{font-size:12.8px;color:var(--terracotta-dark);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
+.loc-block h4{font-size:12.8px;color:var(--ink);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--input-bg);border:1px solid var(--line);border-radius:9px;padding:6px 10px;font-size:12.3px;margin:0 6px 6px 0}
 .chip.low{border-color:var(--kredit);background:var(--surface3)}
 .chip.warn{border-color:var(--warn);background:var(--surface3)}
@@ -455,7 +464,9 @@ a.crumbLink:last-child{color:var(--accent,#3b82f6);font-weight:600}
 
 /* ---- Searchable account picker ---- */
 .akunPickerInput{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);font-size:13.5px;color:var(--ink)}
-.akunPickerInput:focus{outline:none;border-color:var(--terracotta);box-shadow:0 0 0 3px rgba(193,96,61,.12)}
+/* Biru (bukan orange) khusus untuk akunPicker — dipakai di banyak tempat (jurnal, kas masuk/
+   keluar, dll), disamakan sama seperti pola .btn-blue di atas. */
+.akunPickerInput:focus{outline:none;border-color:var(--accent,#3b82f6);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
 .akunPickerList{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:240px;overflow-y:auto;
   background:var(--input-bg);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);z-index:40}
 .akunPickerItem{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--surface3)}
@@ -2375,7 +2386,7 @@ if(!window.__fiturLainDocListenerAdded){
 // Modal verifikasi sebelum data hasil impor Excel benar-benar diterapkan ke aplikasi.
 // Menampilkan pratinjau baris sesuai kolom template (cfg.template.headers) agar user bisa
 // mengecek kesesuaian data dulu; hanya dieksekusi (cfg.onImport) setelah user klik "Terapkan".
-function openImportPreviewModal(prefix, rows, cfg){
+function openImportPreviewModal(prefix, rows, cfg, namaFile){
   const headers = (cfg.template && cfg.template.headers) || Object.keys(rows[0]||{});
   const id = prefix+'ImportPreviewModal';
   let m = document.getElementById(id); if(m) m.remove();
@@ -2404,7 +2415,7 @@ function openImportPreviewModal(prefix, rows, cfg){
   m.addEventListener('click', e=>{ if(e.target===m) close(); });
   document.getElementById(id+'Close').addEventListener('click', close);
   document.getElementById(id+'Cancel').addEventListener('click', close);
-  document.getElementById(id+'Apply').addEventListener('click', ()=>{ close(); cfg.onImport(rows); });
+  document.getElementById(id+'Apply').addEventListener('click', ()=>{ close(); cfg.onImport(rows, namaFile); });
 }
 function bindIoToolbar(prefix, cfg){
   if(cfg.template){
@@ -2421,7 +2432,7 @@ function bindIoToolbar(prefix, cfg){
           inp.value='';
           if(err) return toast('File tidak valid: '+err.message);
           if(!rows || rows.length===0) return toast('File Excel kosong / tidak ada data');
-          openImportPreviewModal(prefix, rows, cfg);
+          openImportPreviewModal(prefix, rows, cfg, file.name);
         });
       });
     }
@@ -2593,6 +2604,30 @@ function mergeDbFull(current, incoming){
 function isAmorJurnalRef(ref){
   return typeof ref==='string' && (ref.indexOf('biaya-amor-')===0 || ref.indexOf('pembelian-amor-')===0);
 }
+/* Cek apakah sebuah `ref` jurnal adalah hasil posting otomatis penyusutan Aset Tetap
+   (aset-dep-<idAset>) — dipakai bareng isAmorJurnalRef() untuk deteksi dobel amortisasi
+   MAUPUN depresiasi (lihat dobelJurnalKey). Beda dari ref amortisasi: satu aset memakai
+   ref aset-dep- yang SAMA untuk SEMUA hari/periode penyusutannya (lihat
+   postingPenyusutanTertunggakAset), jadi ref saja tidak cukup untuk menandai dobel —
+   perlu digabung dengan tanggal (lihat dobelJurnalKey). */
+function isAsetDepRef(ref){
+  return typeof ref==='string' && ref.indexOf('aset-dep-')===0;
+}
+/* Kunci pengelompokan untuk deteksi jurnal dobel pada fitur amortisasi (Biaya/Pembelian)
+   MAUPUN depresiasi (Aset Tetap). Mengembalikan null kalau ref bukan salah satu dari
+   ketiganya (jurnal lain tidak diikutkan dalam deteksi dobel ini).
+   - Amortisasi Biaya/Pembelian: nomor periode sudah ada di dalam ref itu sendiri
+     (mis. 'biaya-amor-<id>-3'), jadi ref saja sudah unik per periode — cukup dikelompokkan
+     per ref.
+   - Penyusutan Aset: ref-nya SENGAJA sama untuk semua hari/periode satu aset
+     ('aset-dep-<id>'), jadi dua entri baru dianggap dobel kalau ref-nya sama DAN
+     tanggalnya juga sama persis (dua jurnal penyusutan untuk aset & hari yang sama). */
+function dobelJurnalKey(j){
+  if(!j) return null;
+  if(isAmorJurnalRef(j.ref)) return j.ref;
+  if(isAsetDepRef(j.ref)) return j.ref+'|'+(j.tanggal||'');
+  return null;
+}
 function mergeDbValue(curVal, incVal){
   if(Array.isArray(curVal) || Array.isArray(incVal)){
     const curArr = Array.isArray(curVal) ? curVal : [];
@@ -2608,13 +2643,14 @@ function mergeDbValue(curVal, incVal){
          hasilnya dua jurnal ber-id beda tapi ref sama — dedup per-id saja tidak menangkap
          ini. Cek ref di sini supaya duplikat itu tidak ikut lolos lewat merge (baik saat
          restore backup maupun saat sinkron cloud, karena keduanya lewat fungsi ini). */
-      const seenAmorRefs = new Set(curArr.filter(x=> x && typeof x==='object' && isAmorJurnalRef(x.ref)).map(x=>x.ref));
+      const seenAmorRefs = new Set(curArr.filter(x=> x && typeof x==='object' && dobelJurnalKey(x)).map(x=>dobelJurnalKey(x)));
       incArr.forEach(x=>{
         if(x && typeof x==='object' && x.id!=null){
           if(seenIds.has(x.id)) return;
-          if(isAmorJurnalRef(x.ref) && seenAmorRefs.has(x.ref)) return;
+          const dobelKey = dobelJurnalKey(x);
+          if(dobelKey && seenAmorRefs.has(dobelKey)) return;
           merged.push(x); seenIds.add(x.id);
-          if(isAmorJurnalRef(x.ref)) seenAmorRefs.add(x.ref);
+          if(dobelKey) seenAmorRefs.add(dobelKey);
         } else if(!merged.some(y=> JSON.stringify(y)===JSON.stringify(x))){
           merged.push(x);
         }
@@ -2746,21 +2782,27 @@ async function load(){
 }
 
 /* Perbaikan berkelanjutan (bukan sekali-jalan): bersihkan jurnal posting amortisasi (Biaya
-   maupun Pembelian) yang ke-dobel ber-ref sama. Awalnya ini migrasi sekali-jalan
-   (_migrated_dedupAmorJurnal), tapi karena duplikat semacam ini masih bisa muncul lagi tiap
-   kali dua device sempat posting periode yang sama sebelum sinkron cloud (postJurnal() selalu
-   bikin id baru, jadi dedup per-id di merge tidak menangkapnya — lihat mergeDbValue), fungsi
-   ini sekarang dipanggil di SETIAP load(), bukan cuma sekali, supaya duplikat baru ikut
-   otomatis terbersihkan juga. mergeDbValue sendiri sekarang sudah dedup per-ref untuk entri
-   ini (lihat isAmorJurnalRef), jadi ini lebih sebagai jaring pengaman kedua.
-   CATATAN: sengaja TIDAK menyentuh field stok item Pembelian — dari investigasi data nyata,
-   potongan stok per item tetap konsisten (cuma terpotong sesuai amortisasiTerposting yang
-   benar) walau jurnalnya sempat dobel; "mengembalikan" stok berdasarkan jumlah duplikat
-   jurnal justru berisiko bikin stok kelebihan/salah. */
+   maupun Pembelian) DAN penyusutan (Aset Tetap) yang ke-dobel. Awalnya ini migrasi sekali-jalan
+   (_migrated_dedupAmorJurnal) & cuma untuk amortisasi, tapi karena duplikat semacam ini masih
+   bisa muncul lagi tiap kali dua device sempat posting periode/hari yang sama sebelum sinkron
+   cloud (postJurnal() selalu bikin id baru, jadi dedup per-id di merge tidak menangkapnya —
+   lihat mergeDbValue), fungsi ini sekarang dipanggil di SETIAP load(), bukan cuma sekali, dan
+   dilebarkan cakupannya untuk sekaligus menangkap dobel penyusutan aset (lihat dobelJurnalKey
+   utk aturan pengelompokan masing-masing jenis), supaya duplikat baru pada KEDUANYA ikut
+   otomatis terbersihkan. mergeDbValue sendiri sekarang sudah dedup per-key yang sama saat
+   merge (lihat dobelJurnalKey), jadi ini lebih sebagai jaring pengaman kedua.
+   Kalau ditemukan dobel, HANYA salah satu (yang paling awal/pertama ditemukan) yang
+   dipertahankan — sisanya langsung dihapus otomatis beserta jejaknya di Riwayat.
+   CATATAN: sengaja TIDAK menyentuh field stok item Pembelian maupun akumulasi/nilai buku
+   Aset — dari investigasi data nyata, potongan stok/akumulasi tetap konsisten (cuma
+   terpotong/terakumulasi sesuai progres yang benar) walau jurnalnya sempat dobel;
+   "mengoreksi balik" nilai-nilai itu berdasarkan jumlah duplikat jurnal justru berisiko
+   bikin datanya kelebihan/salah. */
 function dedupAmorJurnalOngoing(){
   const groups = {};
   DB.jurnal.forEach(j=>{
-    if(isAmorJurnalRef(j.ref)) (groups[j.ref] = groups[j.ref]||[]).push(j);
+    const key = dobelJurnalKey(j);
+    if(key) (groups[key] = groups[key]||[]).push(j);
   });
   const idsToRemove = new Set();
   Object.values(groups).forEach(list=>{ if(list.length>1) list.slice(1).forEach(j=> idsToRemove.add(j.id)); });
@@ -6186,6 +6228,10 @@ let resepSearch = '';
 let resepFilterJenis = '';
 let resepFilterStatus = ''; // '' = semua, 'final_teruji' | 'final_belumteruji' | 'belumfinal_teruji' | 'belumfinal_belumteruji' (lihat renderResepList)
 let resepSortMode = 'terbaru'; // 'terbaru' = resep terbaru dibuat, 'nama' = urut nama A-Z, 'harga' = harga/porsi termurah dulu
+// Arsip: resep yang ditandai r.arsip=true dianggap "kurang relevan" dan disembunyikan dari
+// daftar aktif secara default, tapi datanya tetap tersimpan utuh (tetap bisa dipakai sebagai
+// sub-resep/bahan resep lain) dan bisa dipulihkan kapan saja lewat toggle "📦 Arsip".
+let resepShowArsip = false; // false = tampilkan resep aktif, true = tampilkan resep yang diarsipkan
 let resepViewStack = []; // stack of resep ids for drill-down navigation (breadcrumb)
 let resepPage = 1; // halaman aktif list resep (dibatasi 10 resep/halaman biar page tidak berat)
 const RESEP_PER_PAGE = 5;
@@ -6982,7 +7028,11 @@ function matchResepFilterStatus(r){
 }
 function renderResepList(c){
   const jenisOptions = [...new Set(DB.resep.map(r=> (r.jenisResep||'').trim()).filter(Boolean))].sort((a,b)=> a.localeCompare(b));
-  let filtered = DB.resep.filter(r=> matchSearch(r.namaMenu+' '+(r.jenisResep||''), resepSearch) && (!resepFilterJenis || (r.jenisResep||'').trim()===resepFilterJenis) && matchResepFilterStatus(r));
+  // Resep aktif vs resep diarsipkan (lihat catatan di deklarasi resepShowArsip di atas).
+  const resepAktifAll = DB.resep.filter(r=> !r.arsip);
+  const resepArsipAll = DB.resep.filter(r=> !!r.arsip);
+  const baseList = resepShowArsip ? resepArsipAll : resepAktifAll;
+  let filtered = baseList.filter(r=> matchSearch(r.namaMenu+' '+(r.jenisResep||''), resepSearch) && (!resepFilterJenis || (r.jenisResep||'').trim()===resepFilterJenis) && matchResepFilterStatus(r));
   // ---- Sortir: 'terbaru' andalkan urutan array DB.resep (resep baru selalu di-push ke akhir,
   // jadi dibalik supaya yang terbaru dibuat tampil duluan), 'nama' urut ABC nama menu, 'harga'
   // urut dari Harga/Porsi termurah dulu (field yang sama seperti yang tampil di tiap kartu).
@@ -7032,9 +7082,15 @@ function renderResepList(c){
       <button type="button" class="btn small resepViewBtn ${resepViewMode==='medium'?'primary btn-blue':''}" data-mode="medium" title="Tampilan Medium" aria-label="Tampilan Medium" style="padding:6px 11px;font-size:15px">▦</button>
       <button type="button" class="btn small resepViewBtn ${resepViewMode==='list'?'primary btn-blue':''}" data-mode="list" title="Tampilan List" aria-label="Tampilan List" style="padding:6px 11px;font-size:15px">☰</button>
     </div>`;
-  let html = `<div class="section-title"><h3>Resep Menu (${filtered.length}${filtered.length!==DB.resep.length?' dari '+DB.resep.length:''})</h3>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${searchBoxHtml('resepSearchInput','')}${filterHtml}${viewToggleHtml}<button class="btn primary btn-blue" id="btnAddResep">+ Tambah Resep</button><div class="fitur-lain-wrap"><button class="btn" id="btnResepFiturLain" type="button">☰ Fitur Lain ▾</button><div class="fitur-lain-menu" id="resepFiturLainMenu">${ioToolbarHtml('resep', resepIoCfg())}<button class="btn small" id="btnBackupResepJson" type="button" title="Simpan semua data Resep (termasuk foto) ke satu file JSON di HP/laptop ini">⬇ Backup JSON</button><button class="btn small" id="btnRestoreResepJson" type="button" title="Pulihkan data Resep dari file JSON hasil Backup">⬆ Restore JSON</button><input type="file" id="fileRestoreResepJson" accept="application/json" class="hidden"></div></div></div></div>`;
-  if(filtered.length===0){ html += `<div class="empty"><div class="big">🍲</div>${DB.resep.length===0?'Belum ada resep. Resep bisa berjenjang — satu resep bisa memakai resep lain sebagai "bahan" (misal Nasi Goreng memakai resep Bumbu Nasi Goreng). Klik nama resep untuk melihat & mengedit detailnya.':'Tidak ada resep yang cocok dengan filter/pencarian ini.'}</div>`; }
+  const arsipToggleHtml = `<button class="btn small ${resepShowArsip?'primary btn-blue':''}" id="btnToggleResepArsip" type="button" title="${resepShowArsip?'Kembali ke daftar Resep Aktif':'Lihat resep yang sudah diarsipkan (kurang relevan)'}">${resepShowArsip?'← Resep Aktif':'Arsip'}${resepArsipAll.length?' ('+resepArsipAll.length+')':''}</button>`;
+  let html = `<div class="section-title"><h3>${resepShowArsip?'Resep Diarsipkan':'Resep Menu'} (${filtered.length}${filtered.length!==baseList.length?' dari '+baseList.length:''})</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${searchBoxHtml('resepSearchInput','')}${filterHtml}${viewToggleHtml}${arsipToggleHtml}${resepShowArsip?'':'<button class="btn primary btn-blue" id="btnAddResep">+ Tambah Resep</button>'}<div class="fitur-lain-wrap"><button class="btn" id="btnResepFiturLain" type="button">☰ Fitur Lain ▾</button><div class="fitur-lain-menu" id="resepFiturLainMenu">${ioToolbarHtml('resep', resepIoCfg())}<button class="btn small" id="btnBackupResepJson" type="button" title="Simpan semua data Resep (termasuk foto) ke satu file JSON di HP/laptop ini">⬇ Backup JSON</button><button class="btn small" id="btnRestoreResepJson" type="button" title="Pulihkan data Resep dari file JSON hasil Backup">⬆ Restore JSON</button><input type="file" id="fileRestoreResepJson" accept="application/json" class="hidden"></div></div></div></div>`;
+  if(filtered.length===0){
+    const emptyMsg = resepShowArsip
+      ? (resepArsipAll.length===0 ? 'Belum ada resep yang diarsipkan. Arsipkan resep yang kurang relevan lewat tombol 🗄 di kartu resep supaya daftar utama lebih ringkas, tanpa menghapus datanya.' : 'Tidak ada resep arsip yang cocok dengan filter/pencarian ini.')
+      : (DB.resep.length===0 ? 'Belum ada resep. Resep bisa berjenjang — satu resep bisa memakai resep lain sebagai "bahan" (misal Nasi Goreng memakai resep Bumbu Nasi Goreng). Klik nama resep untuk melihat & mengedit detailnya.' : 'Tidak ada resep yang cocok dengan filter/pencarian ini.');
+    html += `<div class="empty"><div class="big">${resepShowArsip?'📦':'🍲'}</div>${emptyMsg}</div>`;
+  }
   else {
     const gridModeClass = resepViewMode==='medium' ? ' rv-medium' : (resepViewMode==='list' ? ' rv-list' : '');
     html += `<div class="resep-grid${gridModeClass}" style="touch-action:pan-y" id="resepGridSwipeArea">`;
@@ -7059,11 +7115,13 @@ function renderResepList(c){
             <label class="resep-verified-toggle resep-toggle-compact" title="Finalisasi Resep"><input type="checkbox" class="chkResepFinalisasi" data-id="${r.id}" ${r.finalisasi?'checked':''}><span class="toggle-icon">⚑</span></label>
             <label class="resep-verified-toggle resep-toggle-compact" title="Resep Teruji & Berhasil"><input type="checkbox" class="chkResepVerified" data-id="${r.id}" ${r.verified?'checked':''}><span class="toggle-icon">★</span></label>
             <button class="btn small btnExportResepRow" data-id="${r.id}" title="Ekspor PDF">⬇</button>
+            <button class="btn small btnArsipResepRow" data-id="${r.id}" title="${r.arsip?'Keluarkan dari arsip':'Arsipkan resep ini (kurang relevan)'}">${r.arsip?'↩':'🗄'}</button>
             <button class="btn small danger btnDelResepRow" data-id="${r.id}" title="Hapus">🗑</button>
             <button class="btn small btnDupResepRow" data-id="${r.id}" title="Duplikat">⧉</button>
           </div>` : `
           <div class="resep-card-actions">
             <button class="btn small btnExportResepRow" data-id="${r.id}" title="Ekspor PDF">⬇</button>
+            <button class="btn small btnArsipResepRow" data-id="${r.id}" title="${r.arsip?'Keluarkan dari arsip':'Arsipkan resep ini (kurang relevan)'}">${r.arsip?'↩':'🗄'}</button>
             <button class="btn small danger btnDelResepRow" data-id="${r.id}" title="Hapus">🗑</button>
             <button class="btn small btnDupResepRow" data-id="${r.id}" title="Duplikat">⧉</button>
             <label class="resep-verified-toggle resep-toggle-boxed" title="Finalisasi Resep"><input type="checkbox" class="chkResepFinalisasi" data-id="${r.id}" ${r.finalisasi?'checked':''}><span class="toggle-icon">⚑</span></label>
@@ -7122,12 +7180,17 @@ function renderResepList(c){
     try{ localStorage.setItem('resepViewMode', resepViewMode); }catch(e){}
     renderContent();
   }));
-  document.getElementById('btnAddResep').addEventListener('click', ()=>{
+  const btnToggleResepArsip = document.getElementById('btnToggleResepArsip');
+  if(btnToggleResepArsip) btnToggleResepArsip.addEventListener('click', ()=>{
+    resepShowArsip = !resepShowArsip; resepSearch=''; resepFilterJenis=''; resepFilterStatus=''; resepPage=1; renderContent();
+  });
+  const btnAddResepEl = document.getElementById('btnAddResep');
+  if(btnAddResepEl) btnAddResepEl.addEventListener('click', ()=>{
     const nama = prompt('Nama menu:'); if(!nama) return;
     const namaTrim = nama.trim();
     if(!namaTrim) return toast('Nama tidak boleh kosong');
     if(DB.resep.some(x=>x.namaMenu.trim().toLowerCase()===namaTrim.toLowerCase())) return toast('Nama menu ini sudah ada, gunakan nama lain agar tidak double');
-    const r = { id:uid(), namaMenu:namaTrim, jenisResep:'', gambar:null, jumlahPorsi:1, bahan:[], steps:[], peralatan:[], verified:false, finalisasi:false };
+    const r = { id:uid(), namaMenu:namaTrim, jenisResep:'', gambar:null, jumlahPorsi:1, bahan:[], steps:[], peralatan:[], verified:false, finalisasi:false, arsip:false };
     DB.resep.push(r); save();
     resepViewStack = [r.id]; renderContent();
   });
@@ -7144,6 +7207,11 @@ function renderResepList(c){
   }));
   c.querySelectorAll('.btnExportResepRow').forEach(btn=> btn.addEventListener('click', ()=>{
     const r = DB.resep.find(x=>x.id===btn.dataset.id); if(r) resepExportPdf(r);
+  }));
+  c.querySelectorAll('.btnArsipResepRow').forEach(btn=> btn.addEventListener('click', ()=>{
+    const rr = DB.resep.find(x=>x.id===btn.dataset.id); if(!rr) return;
+    rr.arsip = !rr.arsip; save(); renderContent();
+    toast(rr.arsip?'Resep "'+rr.namaMenu+'" diarsipkan':'Resep "'+rr.namaMenu+'" dikeluarkan dari arsip');
   }));
   c.querySelectorAll('.btnDelResepRow').forEach(btn=> btn.addEventListener('click', ()=>{
     if(!confirm('Hapus resep ini?')) return;
@@ -7170,7 +7238,8 @@ function renderResepList(c){
       steps: (src.steps||[]).map(s=> ({...s})),
       peralatan: (src.peralatan||[]).map(p=> ({...p, id: uid()})),
       verified: false,
-      finalisasi: false
+      finalisasi: false,
+      arsip: false
     };
     DB.resep.push(copy); save(); renderContent();
     toast('Resep "'+src.namaMenu+'" berhasil diduplikat');
@@ -7452,12 +7521,13 @@ function renderResepDetail(c){
           </div>
         </div>`:`<label style="cursor:pointer;width:56px;height:56px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px">📷<input type="file" accept="image/*" class="ed-rimg hidden"></label>`}
         <div>
-          <h3 id="resepHeaderTitle" style="font-size:15.5px">${r.namaMenu} ${r.verified?'<span class="resep-verified-badge" style="position:static;display:inline-flex;vertical-align:middle;margin-left:6px">✓ Teruji</span>':''} ${!r.finalisasi?'<span class="resep-belumfinal-badge" style="position:static;display:inline-flex;vertical-align:middle;margin-left:6px">⚠ Belum Final</span>':''}</h3>
+          <h3 id="resepHeaderTitle" style="font-size:15.5px">${r.namaMenu} ${r.verified?'<span class="resep-verified-badge" style="position:static;display:inline-flex;vertical-align:middle;margin-left:6px">✓ Teruji</span>':''} ${!r.finalisasi?'<span class="resep-belumfinal-badge" style="position:static;display:inline-flex;vertical-align:middle;margin-left:6px">⚠ Belum Final</span>':''} ${r.arsip?'<span class="resep-belumfinal-badge" style="position:static;display:inline-flex;vertical-align:middle;margin-left:6px;background:#6b7280">Diarsipkan</span>':''}</h3>
           <div class="mini" id="resepHeaderMeta">⏱ ${totalWaktu} menit • 🍽 ${porsi} porsi</div>
         </div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn small danger" id="btnDelResepDetail" title="Hapus Resep Ini">🗑</button>
+        <button class="btn small" id="btnArsipResepDetail" title="${r.arsip?'Keluarkan dari arsip':'Arsipkan resep ini (kurang relevan)'}">${r.arsip?'↩ Keluarkan dari Arsip':'🗄 Arsipkan'}</button>
         <button class="btn small" id="btnExportResepPdf" title="Ekspor PDF">⬇</button>
       </div>
     </div>
@@ -7636,6 +7706,11 @@ function renderResepDetail(c){
     r.finalisasi = e.target.checked;
     updateResepHeaderLive();
     markResepTableDirty('header');
+  });
+  document.getElementById('btnArsipResepDetail').addEventListener('click', ()=>{
+    r.arsip = !r.arsip; save();
+    toast(r.arsip?'Resep "'+r.namaMenu+'" diarsipkan':'Resep "'+r.namaMenu+'" dikeluarkan dari arsip');
+    renderContent();
   });
 
   const imgInput = document.getElementById('ed-rimg')?.closest('label')?.querySelector('input') || c.querySelector('.ed-rimg');
@@ -8001,7 +8076,7 @@ function bindAkunPicker(id, onSelect){
     if(!itemsHtml) itemsHtml = '<div class="akunPickerItem mini">Tidak ditemukan, coba kata kunci lain</div>';
     const exactMatch = term && DB.coa.some(a=> a.nama.toLowerCase()===term.trim().toLowerCase());
     if(term && term.trim() && !exactMatch){
-      itemsHtml += `<div class="akunPickerItem akunPickerAddNew" data-newname="${term.trim().replace(/"/g,'&quot;')}" style="color:var(--terracotta-dark);font-weight:700">+ Tambah akun baru: "${term.trim()}"</div>`;
+      itemsHtml += `<div class="akunPickerItem akunPickerAddNew" data-newname="${term.trim().replace(/"/g,'&quot;')}" style="color:var(--accent-dark,#2563eb);font-weight:700">+ Tambah akun baru: "${term.trim()}"</div>`;
     }
     list.innerHTML = itemsHtml;
     list.style.display = 'block';
@@ -8046,7 +8121,7 @@ function openAkunPickerQuickAddModal(namaBaru, onCreated){
         <div class="mini" style="margin-top:2px">Kalau dipilih, akun ini akan dirangkum di bawah Header tsb pada laporan.</div>
       </div>
     </div>
-    <button class="btn primary" id="qaSave" style="margin-top:10px;width:100%">Simpan Akun</button>
+    <button class="btn primary btn-blue" id="qaSave" style="margin-top:10px;width:100%">Simpan Akun</button>
   `, 'akunPickerQuickAddModal');
   function refreshSubDariOptions(){
     const kategori = document.getElementById('qaKategori').value;
@@ -8566,8 +8641,9 @@ function openJurnalExportModal(type){
     }
   });
 }
-function importJurnalRows(rows){
+function importJurnalRows(rows, namaFile){
   let okBaris=0, okTrans=0; const warnings=[];
+  const batchId = 'impjurnal-'+uid();
   // Tahap 1: kelompokkan tiap baris ke transaksinya berdasarkan kolom "No Transaksi". Baris tanpa
   // "No Transaksi" (kosong) dianggap transaksi sendiri-sendiri (tidak digabung dgn baris lain).
   const groups = new Map(); // key -> {tanggal, keterangan, sumber, tagStr, debitLines:[], kreditLines:[], baris:[]}
@@ -8599,12 +8675,67 @@ function importJurnalRows(rows){
     const tags = parseTagInput(g.tagStr); tags.forEach(ensureTag);
     const groupRef = 'import-'+uid();
     const pairs = splitCompoundEntry(g.debitLines, g.kreditLines);
-    pairs.forEach(p=> postJurnal({ tanggal:g.tanggal, keterangan:g.keterangan, debitId:p.debitId, kreditId:p.kreditId, nominal:p.nominal, sumber:g.sumber, ref:groupRef, tags }));
+    pairs.forEach(p=>{
+      const entry = postJurnal({ tanggal:g.tanggal, keterangan:g.keterangan, debitId:p.debitId, kreditId:p.kreditId, nominal:p.nominal, sumber:g.sumber, ref:groupRef, tags });
+      if(entry) entry.importBatchId = batchId;
+    });
     okBaris += pairs.length; okTrans++;
   });
+  // Catat riwayat impor ini (kalau ada minimal 1 transaksi berhasil) supaya bisa ditampilkan di
+  // tabel "Riwayat Impor" (Jurnal Umum) dan bisa dihapus sekaligus lewat hapusRiwayatImporJurnal,
+  // sama pola dengan riwayat Impor Buku Besar (lihat DB.riwayatImporBukuBesar).
+  if(okTrans>0){
+    DB.riwayatImporJurnal = DB.riwayatImporJurnal || [];
+    DB.riwayatImporJurnal.push({ id: uid(), batchId, waktu: new Date().toISOString(), namaFile: namaFile||'', totalTrans: okTrans, totalBaris: okBaris });
+  }
   save(); renderContent();
   toast('Impor jurnal: '+okTrans+' transaksi ('+okBaris+' baris) berhasil'+(warnings.length?(', '+warnings.length+' dilewati'):''));
   if(warnings.length) console.warn(warnings.join('\n'));
+}
+// Tabel "Riwayat Impor" di bawah Riwayat Jurnal (Jurnal Umum) — daftar tiap kali Impor Excel
+// jurnal dijalankan, dipecah 5 baris per halaman (lihat paginateRows/paginationBarHtml, sama pola
+// dengan riwayatTableHtml). Tiap baris punya tombol Hapus yang akan menghapus SEMUA baris jurnal
+// hasil impor tersebut (dikenali lewat importBatchId yang sama, lihat hapusRiwayatImporJurnal).
+function jurnalRiwayatImporHtml(){
+  DB.riwayatImporJurnal = DB.riwayatImporJurnal || [];
+  const list = DB.riwayatImporJurnal.slice().sort((a,b)=> (b.waktu||'').localeCompare(a.waktu||''));
+  const { pageRows, page, totalPages, total, pageSize } = paginateRows('riwayatImporJurnal', list, 5);
+  const rows = pageRows.map(h=>{
+    const waktu = h.waktu ? new Date(h.waktu).toLocaleString('id-ID', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
+    return `<tr>
+      <td class="wrap-cell">${waktu}</td>
+      <td class="wrap-cell">${escHtml(h.namaFile||'-')}</td>
+      <td class="num">${h.totalTrans||0}</td>
+      <td class="num">${h.totalBaris||0}</td>
+      <td><button class="btn small danger btnHapusRiwayatImporJurnal" data-id="${h.id}" type="button">🗑 Hapus</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="tablewrap"><table class="sheet"><thead><tr><th>Waktu Impor</th><th>Nama File</th><th>Jml Transaksi</th><th>Jml Baris</th><th></th></tr></thead><tbody>
+  ${rows || '<tr><td colspan="5" class="empty">Belum ada riwayat impor</td></tr>'}
+  </tbody></table></div>${paginationBarHtml('riwayatImporJurnal', page, totalPages, total, pageSize)}`;
+}
+function renderJurnalRiwayatImporTable(){
+  const wrap = document.getElementById('jurnalRiwayatImporWrap'); if(!wrap) return;
+  DB.riwayatImporJurnal = DB.riwayatImporJurnal || [];
+  const totalPages = Math.max(1, Math.ceil(DB.riwayatImporJurnal.length/5));
+  wrap.innerHTML = jurnalRiwayatImporHtml();
+  wrap.querySelectorAll('.btnHapusRiwayatImporJurnal').forEach(btn=> btn.addEventListener('click', ()=> hapusRiwayatImporJurnal(btn.dataset.id)));
+  bindPaginationUI(wrap, 'riwayatImporJurnal', totalPages, renderJurnalRiwayatImporTable);
+}
+// Hapus 1 riwayat impor jurnal beserta SELURUH baris jurnal yang dihasilkan dari impor tersebut
+// (dikenali lewat field importBatchId yang sama, ditempel ke tiap entry saat diposting lewat
+// importJurnalRows). Sama pola dengan hapusRiwayatImporBukuBesar.
+function hapusRiwayatImporJurnal(historyId){
+  DB.riwayatImporJurnal = DB.riwayatImporJurnal || [];
+  const h = DB.riwayatImporJurnal.find(x=>x.id===historyId);
+  if(!h) return;
+  if(!confirm('Hapus riwayat impor ini? '+(h.totalBaris||0)+' baris jurnal yang dihasilkan dari impor ini (file: '+(h.namaFile||'-')+') akan ikut TERHAPUS SEMUA dari Jurnal Umum. Tindakan ini tidak bisa dibatalkan.')) return;
+  const toRemove = DB.jurnal.filter(j=>j.importBatchId===h.batchId);
+  toRemove.forEach(j=> catatRiwayat('hapus', j));
+  DB.jurnal = DB.jurnal.filter(j=>j.importBatchId!==h.batchId);
+  DB.riwayatImporJurnal = DB.riwayatImporJurnal.filter(x=>x.id!==historyId);
+  save(); renderContent();
+  toast('Riwayat impor dihapus, '+toRemove.length+' baris jurnal ikut dihapus');
 }
 RENDERERS.jurnal = function(c){
   if(isViewOnly('jurnal')){
@@ -8639,7 +8770,11 @@ RENDERERS.jurnal = function(c){
   <div class="card" style="margin-top:14px">
   <div class="section-title"><h3 id="jurnalCountTitle">Riwayat Jurnal (${DB.jurnal.length})</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${searchBoxHtml('jurnalSearchInput','Cari keterangan/akun')}${sortSelectHtml('jurnalSortInput', jurnalSort)}${jurnalStatusFilterHtml(jurnalStatusFilter)}${ioToolbarHtml('jurnal', jurnalIoCfg())}<button class="btn small" id="jurnalBtnExpXlsx" type="button">⬇ Excel</button><button class="btn small" id="jurnalBtnExpPdf" type="button">⬇ PDF</button></div></div>
   <div style="margin-bottom:8px">${infoNoteHtml('Cara kerja Impor/Ekspor jurnal', `Impor Excel berguna untuk input banyak jurnal sekaligus tanpa input manual satu-satu — nama akun di file harus sama persis dengan nama di Daftar Akun. Isi kolom "No Transaksi" yang sama pada beberapa baris untuk menggabungkannya jadi 1 transaksi (entri majemuk) dengan lebih dari 1 akun Debit dan/atau lebih dari 1 akun Kredit — total Debit &amp; Kredit per "No Transaksi" harus sama. Baris tanpa "No Transaksi" akan diperlakukan sebagai transaksi sendiri (1 Debit, 1 Kredit). Unduh Excel/PDF akan menampilkan pilihan periode terlebih dahulu &amp; hasilnya diurutkan tanggal terbaru ke terlama.`)}</div>
-  <div id="jurnalTableWrap"></div></div>`;
+  <div id="jurnalTableWrap"></div></div>
+  <div class="card" style="margin-top:14px">
+  <div class="section-title"><h3>Riwayat Impor</h3></div>
+  <div class="mini" style="margin-bottom:8px;line-height:1.6">Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh baris jurnal</b> yang dihasilkan dari impor Excel tersebut.</div>
+  <div id="jurnalRiwayatImporWrap"></div></div>`;
   c.innerHTML = html;
   bindJurnalRows();
   document.getElementById('jDiskonCheck').addEventListener('change', e=>{
@@ -8655,6 +8790,7 @@ RENDERERS.jurnal = function(c){
   document.getElementById('jurnalSearchInput').addEventListener('input', e=>{ jurnalSearch=e.target.value; setPage('jurnal',1); renderJurnalTable(); });
   document.getElementById('jurnalSortInput').addEventListener('change', e=>{ jurnalSort=e.target.value; setPage('jurnal',1); renderJurnalTable(); });
   document.getElementById('jurnalStatusFilterInput').addEventListener('change', e=>{ jurnalStatusFilter=e.target.value; setPage('jurnal',1); renderJurnalTable(); });
+  renderJurnalRiwayatImporTable();
   document.getElementById('btnPostJurnal').addEventListener('click', ()=>{
     syncJurnalRowsFromDom();
     const debitRows = jurnalRows.filter(r=>r.tipe==='debit' && r.akunId && rupiahToNumber(r.nominal)>0);
@@ -9044,7 +9180,7 @@ function importBiayaRows(rows){
   if(warnings.length) console.warn(warnings.join('\n'));
 }
 RENDERERS.biaya = function(c){
-  if(jalankanAutoAmortisasi()) save();
+  if(jalankanAutoAmortisasi() | dedupAmorJurnalOngoing()) save();
   if(isViewOnly('biaya')){
     c.innerHTML = `${viewOnlyNoticeHtml('Biaya')}
     <div class="card" style="margin-top:14px">
@@ -9681,19 +9817,72 @@ function openEditBiayaModal(b){
   });
 }
 
-function akunTransaksiHtml(akunId, limit, sampaiTanggal){
-  const rows = DB.jurnal.filter(j=>(j.debitId===akunId || j.kreditId===akunId) && (!sampaiTanggal || j.tanggal<=sampaiTanggal)).slice().reverse();
-  const show = limit? rows.slice(0,limit) : rows;
-  let running = 0;
+/* Format 'YYYY-MM' -> 'September 2026' dst (Bahasa Indonesia), dipakai label navigasi bulan. */
+function fmtBulanLabelID(ym){
+  const [y,m] = ym.split('-').map(Number);
+  return new Date(y, m-1, 1).toLocaleDateString('id-ID', {month:'long', year:'numeric'});
+}
+/* Geser string bulan 'YYYY-MM' sejumlah `delta` bulan (boleh negatif), dgn rollover tahun. */
+function shiftBulanYM(ym, delta){
+  let [y,m] = ym.split('-').map(Number);
+  m += delta;
+  while(m<1){ m+=12; y--; }
+  while(m>12){ m-=12; y++; }
+  return y+'-'+String(m).padStart(2,'0');
+}
+
+/* Saldo akun tepat SEBELUM bulan tertentu dimulai (posisi awal bulan) — dipakai sebagai saldo
+   awal untuk menghitung Ending Balance berjalan per baris di akunTransaksiHtml. */
+function saldoSebelumBulan(akunId, bulan){
   const akun = akunById(akunId);
-  const isDebitNormal = normalIsDebit(akun.kategori);
-  return `<div class="tablewrap"><table class="sheet"><thead><tr><th>No</th><th>Tanggal</th><th>Keterangan</th><th>D/K</th><th>Nominal</th><th></th></tr></thead><tbody>
-  ${show.length? show.map(j=>{
+  if(!akun) return 0;
+  const awal = bulan+'-01';
+  let debit=0, kredit=0;
+  DB.jurnal.forEach(j=>{
+    if(j.tanggal>=awal) return;
+    if(j.debitId===akunId) debit+=j.nominal;
+    if(j.kreditId===akunId) kredit+=j.nominal;
+  });
+  return normalIsDebit(akun.kategori) ? (debit-kredit) : (kredit-debit);
+}
+/* Rincian transaksi 1 akun, dibatasi per bulan yang sedang ditampilkan (bukan lagi limit N transaksi
+   terakhir) — tabel diikuti navigasi ‹ Sebelumnya / Selanjutnya › di bawahnya supaya bisa geser ke
+   bulan lain tanpa menutup popup. `bulan` format 'YYYY-MM'. Dipakai di Neraca & Laba Rugi
+   (lihat bindAkunTrxDrawer utk render awal + rebind saat ganti bulan).
+   Kolom "Ending Balance" menampilkan saldo akun BERJALAN setelah tiap baris transaksi (mulai dari
+   saldo di akhir bulan sebelumnya, lihat saldoSebelumBulan), supaya user langsung tahu saldo akun
+   di titik waktu manapun tanpa perlu menghitung manual — baris diurutkan kronologis (tanggal, lalu
+   nomor jurnal) supaya saldo berjalannya akurat.  */
+function akunTransaksiHtml(akunId, bulan){
+  const akun = akunById(akunId);
+  const rows = DB.jurnal.filter(j=>(j.debitId===akunId || j.kreditId===akunId) && j.tanggal.slice(0,7)===bulan)
+    .slice().sort((a,b)=> a.tanggal===b.tanggal ? (a.no-b.no) : (a.tanggal<b.tanggal?-1:1));
+  const normalDebit = normalIsDebit(akun.kategori);
+  let saldoBerjalan = saldoSebelumBulan(akunId, bulan);
+  return `<div class="tablewrap"><table class="sheet"><thead><tr><th>No</th><th>Tanggal</th><th>Keterangan</th><th>D/K</th><th>Nominal</th><th>Ending Balance</th><th></th></tr></thead><tbody>
+  ${rows.length? rows.map(j=>{
     const isDebit = j.debitId===akunId;
-    const arah = isDebit? (isDebitNormal?1:-1) : (isDebitNormal?-1:1);
-    return `<tr data-jid="${j.id}"><td><a href="#" class="goto-jurnal-link" data-jid="${j.id}" title="Buka transaksi ini di Jurnal Umum" style="color:var(--accent,#3b82f6);font-weight:600;text-decoration:underline;cursor:pointer">${j.no}</a></td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td><span class="tag ${isDebit?'debit':'kredit'}">${isDebit?'Debit':'Kredit'}</span></td><td class="num">${fmtRp(j.nominal)}</td><td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null,iconMode:true})}</td></tr>`;
-  }).join('') : '<tr><td colspan="6" class="empty">Belum ada transaksi</td></tr>'}
-  </tbody></table></div>`;
+    const efek = normalDebit ? (isDebit? j.nominal : -j.nominal) : (isDebit? -j.nominal : j.nominal);
+    saldoBerjalan += efek;
+    return `<tr data-jid="${j.id}"><td><a href="#" class="goto-jurnal-link" data-jid="${j.id}" title="Buka transaksi ini di Jurnal Umum" style="color:var(--accent,#3b82f6);font-weight:600;text-decoration:underline;cursor:pointer">${j.no}</a></td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td><span class="tag ${isDebit?'debit':'kredit'}">${isDebit?'Debit':'Kredit'}</span></td><td class="num">${fmtRp(j.nominal)}</td><td class="num">${fmtRp(saldoBerjalan)}</td><td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null,iconMode:true})}</td></tr>`;
+  }).join('') : `<tr><td colspan="7" class="empty">Tidak ada transaksi di bulan ${fmtBulanLabelID(bulan)}</td></tr>`}
+  </tbody></table></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+    <button type="button" class="btn small" id="akunTrxPrevBulan">‹ Sebelumnya</button>
+    <div style="font-weight:700">${fmtBulanLabelID(bulan)}</div>
+    <button type="button" class="btn small" id="akunTrxNextBulan">Selanjutnya ›</button>
+  </div>`;
+}
+
+/* Buka/isi ulang popup rincian transaksi akun (dipakai Neraca & Laba Rugi): render tabel+nav utk
+   `bulan` yang aktif, bind aksi baris (edit/hapus/goto jurnal) & tombol Sebelumnya/Selanjutnya —
+   klik salah satu tombol nav akan memanggil ulang fungsi ini dgn bulan baru tanpa menutup drawer. */
+function bindAkunTrxDrawer(drawerEl, akunId, bulan){
+  const body = drawerEl.querySelector('[data-akuntrx-body]');
+  body.innerHTML = akunTransaksiHtml(akunId, bulan);
+  bindJurnalRowActions(drawerEl);
+  body.querySelector('#akunTrxPrevBulan').addEventListener('click', ()=> bindAkunTrxDrawer(drawerEl, akunId, shiftBulanYM(bulan,-1)));
+  body.querySelector('#akunTrxNextBulan').addEventListener('click', ()=> bindAkunTrxDrawer(drawerEl, akunId, shiftBulanYM(bulan,1)));
 }
 
 /* Loncat dari rincian akun (Neraca, Buku Besar, dst) langsung ke baris transaksi yang
@@ -10186,7 +10375,7 @@ function openQuickAddItemModal(prefillNama, onDone){
   });
 }
 RENDERERS.pembelian = function(c){
-  if(jalankanAutoAmortisasiPembelian()) save();
+  if(jalankanAutoAmortisasiPembelian() | dedupAmorJurnalOngoing()) save();
   if(isViewOnly('pembelian')){
     c.innerHTML = `${viewOnlyNoticeHtml('Pembelian')}
     <div class="card" style="margin-top:14px">
@@ -11279,7 +11468,7 @@ function openTambahProdukBahanModal(){
   const kepDefault = 'Pribadi';
   const satuanDefault = DB.satuanCustom[0]||'pcs';
   const akunPsDefault = (akunPersediaanUntuk(kepDefault,'bahan')||{}).id||'';
-  const m = openFormModal('🌾 Tambah Produk (Persediaan Bahan)', `
+  const m = openFormModal('Tambah Produk (Persediaan Bahan)', `
     <div class="formgrid">
       <div class="field" style="grid-column:span 2"><label>Nama Produk/Bahan</label><input id="tpbNama" placeholder="mis. Beras, Minyak Goreng..."></div>
       <div class="field"><label>Satuan</label>${manageableSelectHtml('tpbSatuan', DB.satuanCustom, satuanDefault, 'satuanCustom')}</div>
@@ -11338,7 +11527,7 @@ function renderPersediaanTable(){
       ${bulkCheckboxTd('persediaanbahan',p.id)}
       <td>${p.gambar?`<img src="${p.gambar}" class="thumb" style="width:34px;height:34px;object-fit:cover;border-radius:7px;cursor:pointer">`:`<label style="cursor:pointer" class="mini">📷<input type="file" accept="image/*" class="ed-img hidden"></label>`}</td>
       <td class="mini">${p.kode}</td>
-      <td class="wrap-cell"><span class="produkNamaLink" data-id="${p.id}" title="Klik untuk lihat riwayat pembelian & ubah nama" style="cursor:pointer;color:var(--accent,#8a5a2c);text-decoration:underline;text-underline-offset:2px;font-weight:600;word-break:break-word;display:inline-block">${escHtml(p.nama)}</span>${produkAdalahHasilResep(p.id)?'<div class="mini" title="Produk ini hasil dari fitur Tambah Produk dengan Qty pada resep">🍳 Hasil Resep</div>':''}</td>
+      <td class="wrap-cell"><span class="produkNamaLink" data-id="${p.id}" title="Klik untuk lihat riwayat pembelian & ubah nama" style="cursor:pointer;color:var(--ink);text-decoration:underline;text-underline-offset:2px;font-weight:600;word-break:break-word;display:inline-block">${escHtml(p.nama)}</span>${produkAdalahHasilResep(p.id)?'<div class="mini" title="Produk ini hasil dari fitur Tambah Produk dengan Qty pada resep">🍳 Hasil Resep</div>':''}</td>
       <td style="min-width:230px;white-space:normal;overflow-wrap:anywhere">${lokasiMultiPickerHtml('lokbahan_'+p.id, itemLokasiIds(p))}</td>
       <td style="min-width:110px"><input type="text" class="ed-kodelokasi" placeholder="Ketik kode..." value="${escHtml(primaryLokasiFolder(p)?.kode||'')}" title="Ketik kode lokasi lalu Enter/klik keluar untuk mengisi Lokasi otomatis"></td>
       <td style="min-width:200px">${akunPickerHtml('ps_produk_'+p.id, a=>a.kategori==='PS', 'Ketik nama akun persediaan...', p.akunPersediaanId||'')}</td>
@@ -11506,7 +11695,7 @@ function openRiwayatPembelianBahanModal(p){
     </tbody></table></div>
   `;
 
-  const m = openFormModal('📜 Riwayat Pembelian — ' + p.nama, bodyHtml, 'riwayatPembelianBahanModal');
+  const m = openFormModal('Riwayat Pembelian — ' + p.nama, bodyHtml, 'riwayatPembelianBahanModal');
   const namaInput = m.querySelector('#rpbNama');
   m.querySelector('#rpbSimpanNama').addEventListener('click', ()=>{
     const namaBaru = (namaInput.value||'').trim();
@@ -11562,7 +11751,7 @@ function openRiwayatPembelianBarangModal(b){
     </tbody></table></div>
   `;
 
-  const m = openFormModal('📜 Riwayat Pembelian — ' + b.nama, bodyHtml, 'riwayatPembelianBarangModal');
+  const m = openFormModal('Riwayat Pembelian — ' + b.nama, bodyHtml, 'riwayatPembelianBarangModal');
   const namaInput = m.querySelector('#rpbrgNama');
   m.querySelector('#rpbrgSimpanNama').addEventListener('click', ()=>{
     const namaBaru = (namaInput.value||'').trim();
@@ -11740,7 +11929,7 @@ function openTambahBarangModal(sectionCfg){
   const kepDefault = 'Pribadi';
   const satuanDefault = DB.satuanCustom[0]||'pcs';
   const akunPsDefault = (akunPersediaanUntuk(kepDefault,'barang')||{}).id||'';
-  const m = openFormModal('📦 Tambah Barang', `
+  const m = openFormModal('Tambah Barang', `
     <div class="formgrid">
       <div class="field" style="grid-column:span 2"><label>Nama Barang</label><input id="tbNama" placeholder="mis. Rak, Sumpit, Tisu, Sabun..."></div>
       <div class="field"><label>Satuan</label>${manageableSelectHtml('tbSatuan', DB.satuanCustom, satuanDefault, 'satuanCustom')}</div>
@@ -11856,7 +12045,7 @@ function renderBarangSectionTable(sectionCfg){
   <div class="tablewrap"><table class="sheet"><thead><tr>${bulkCheckboxTh('barang_'+key)}${barangSortTh(key,'nama','Nama')}${barangSortTh(key,'lokasi','Lokasi')}<th title=\"Ketik kode lokasi (lihat/atur di menu Lokasi Persediaan) untuk isi Lokasi tanpa cari nama foldernya\">Kode Lokasi</th>${barangSortTh(key,'satuan','Satuan')}${barangSortTh(key,'harga','Harga/Satuan (avg)')}${barangSortTh(key,'stok','Stok')}${barangSortTh(key,'nilai','Nilai Stok')}${barangSortTh(key,'tag','Tag')}${barangSortTh(key,'stokmin','Stok Minimum')}${barangSortTh(key,'akanhabis','⚠ Akan habis')}${barangSortTh(key,'autonol','Stok Habis (Auto Nol)')}${barangSortTh(key,'akunps','Akun Persediaan')}${barangSortTh(key,'bebanop','Beban Operasional')}${barangSortTh(key,'sisahariamor','Sisa Hari Amortisasi')}<th></th></tr></thead><tbody>
   ${pageRows.map(b=>{ const low = isLowStock(b); const auto = Number(b.stokMinimum||0)>0; return `<tr data-id="${b.id}">
     ${bulkCheckboxTd('barang_'+key,b.id)}
-    <td class="wrap-cell"><span class="barangNamaLink" data-id="${b.id}" title="Klik untuk lihat riwayat pembelian & ubah nama" style="cursor:pointer;color:var(--accent,#8a5a2c);text-decoration:underline;text-underline-offset:2px;font-weight:600;word-break:break-word;display:inline-block">${escHtml(b.nama)}</span>${itemUsedAsLokasiFolder('barang',b.id)?`<span class="tag debit" title="Barang ini dipakai sebagai folder di fitur Lokasi Persediaan">✅ Lokasi</span>`:''}</td>
+    <td class="wrap-cell"><span class="barangNamaLink" data-id="${b.id}" title="Klik untuk lihat riwayat pembelian & ubah nama" style="cursor:pointer;color:var(--ink);text-decoration:underline;text-underline-offset:2px;font-weight:600;word-break:break-word;display:inline-block">${escHtml(b.nama)}</span>${itemUsedAsLokasiFolder('barang',b.id)?`<span class="tag debit" title="Barang ini dipakai sebagai folder di fitur Lokasi Persediaan">✅ Lokasi</span>`:''}</td>
     <td style="min-width:230px;white-space:normal;overflow-wrap:anywhere">${lokasiMultiPickerHtml('lokbarang_'+key+'_'+b.id, itemLokasiIds(b))}</td>
     <td style="min-width:110px"><input type="text" class="ed-bkodelokasi" placeholder="Ketik kode..." value="${escHtml(primaryLokasiFolder(b)?.kode||'')}" title="Ketik kode lokasi lalu Enter/klik keluar untuk mengisi Lokasi otomatis"></td>
     <td><input class="ed-bsatuan" value="${b.satuan}" style="width:70px"></td>
@@ -13636,7 +13825,7 @@ RENDERERS.budgetingtravel = function(c){
   let html = `<div class="tabs2">
     <button data-t="daftar" class="${btravelSubtab==='daftar'?'active':''}">Daftar Trip</button>
     <button data-t="kalender" class="${btravelSubtab==='kalender'?'active':''}">Kalender Travel</button>
-    <button data-t="selesai" class="${btravelSubtab==='selesai'?'active':''}">✅ Trip Selesai</button>
+    <button data-t="selesai" class="${btravelSubtab==='selesai'?'active':''}">Trip Selesai</button>
   </div><div id="btravelBody"></div>`;
   c.innerHTML = html;
   c.querySelectorAll('.tabs2 button').forEach(b=> b.addEventListener('click', ()=>{ btravelSubtab=b.dataset.t; renderContent(); }));
@@ -15525,7 +15714,7 @@ function exportRekomendasiHariIniPdf(dateStr){
     function drawSlotTitle(label){
       const bannerH = 26;
       ensureSpace(bannerH + 18);
-      doc.setFillColor(178, 90, 58);
+      doc.setFillColor(111, 163, 216);
       doc.roundedRect(marginLeft, y, pageWidth-marginLeft-marginRight, bannerH, 5, 5, 'F');
       doc.setFontSize(13); doc.setFont(undefined,'bold'); doc.setTextColor(255,255,255);
       doc.text(label.toUpperCase(), pageWidth/2, y+bannerH/2+4.5, {align:'center'});
@@ -15557,7 +15746,7 @@ function exportRekomendasiHariIniPdf(dateStr){
     function drawMenuCard(colX, cardTop, item){
       const h = cardHeight(item);
       const namaLines = wrapNama(item.nama, innerW);
-      doc.setFillColor(253, 248, 240); doc.setDrawColor(226, 210, 186); doc.setLineWidth(0.8);
+      doc.setFillColor(240, 247, 253); doc.setDrawColor(196, 221, 244); doc.setLineWidth(0.8);
       doc.roundedRect(colX, cardTop, colWidth, h, 7, 7, 'FD');
 
       const photoX = colX+cardPad, photoY = cardTop+cardPad;
@@ -15565,7 +15754,7 @@ function exportRekomendasiHariIniPdf(dateStr){
       // jadi warna lembut ini, bukan putih kosong) — lalu foto ditempel dengan mode "contain"
       // (proporsi asli terjaga, tidak pernah keluar dari kotaknya) memakai pdfAddImageFit, pola
       // yang sudah terbukti aman dipakai di ekspor PDF lain di aplikasi ini (Resep, Aset Tetap, dst).
-      doc.setFillColor(240,233,222);
+      doc.setFillColor(222, 236, 250);
       doc.rect(photoX, photoY, innerW, photoH, 'F');
       if(item.gambar){
         pdfAddImageFit(doc, item.gambar, photoX, photoY, innerW, photoH);
@@ -15582,9 +15771,9 @@ function exportRekomendasiHariIniPdf(dateStr){
       doc.setFontSize(8.6); doc.setFont(undefined,'normal'); doc.setTextColor(120,105,90);
       doc.text('Kategori: '+item.kategori, photoX, ty, {maxWidth:innerW}); ty += 12;
       doc.text('Porsi: '+item.porsiText, photoX, ty, {maxWidth:innerW}); ty += 10;
-      doc.setDrawColor(226,210,186); doc.setLineWidth(0.6);
+      doc.setDrawColor(196,221,244); doc.setLineWidth(0.6);
       doc.line(photoX, ty, colX+colWidth-cardPad, ty); ty += 15;
-      doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(178,90,58);
+      doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setTextColor(70,120,175);
       doc.text('Estimasi biaya: '+fmtRp(item.biaya), photoX, ty, {maxWidth:innerW});
       doc.setFont(undefined,'normal'); doc.setTextColor(0,0,0);
     }
@@ -15713,7 +15902,7 @@ function openRekomendasiDrawer(dateStr){
   let rowsHtml = manualMenuFormHtml('manualDrawer');
   rowsHtml += rows;
   rowsHtml += `<div class="recap">Estimasi total biaya konsumsi hari ini: <b>${fmtRp(totalBiaya)}</b>${skala<1?` (porsi sudah diperkecil jadi ${Math.round(skala*100)}% supaya stok tahan ${targetHari} hari)`:''}</div>`;
-  const d = openDetailDrawer('Rekomendasi Menu — '+fmtTgl(dateStr)+' ('+fmtNum(getJumlahOrang())+' orang)', rowsHtml || '<div class="empty">Belum ada resep yang cocok kategori prioritas.</div>');
+  const d = openDetailDrawer('Rekomendasi Menu — '+fmtTgl(dateStr)+' ('+fmtNum(getJumlahOrang())+' orang)', rowsHtml || '<div class="empty">Belum ada resep yang cocok kategori prioritas.</div>', {centered:true});
   bindKonsumsiCheckboxes(d, ()=>{
     const body = document.getElementById('budgetBody');
     if(body) renderKalenderMenu(body);
@@ -15790,7 +15979,7 @@ function renderAkunGroupHtml(list, getSaldo, collapseMap, pctBasis){
     const total = headerTotal(h);
     const key = 'akunhdr_'+h.id;
     const collapsed = collapseMap ? isGroupCollapsed(collapseMap, key) : false;
-    html += `<div class="akun-header-toggle" data-collapse-key="${key}" style="background:var(--surface2);border-radius:6px;margin:3px 0 2px;padding:3px 6px 3px ${10+depth*14}px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.8px;font-weight:700;${collapseMap?'cursor:pointer;user-select:none':''}"><span style="display:flex;align-items:center;gap:6px">${collapseMap?`<span class="mini" style="display:inline-block;width:10px;transition:transform .15s;transform:rotate(${collapsed?'0':'90'}deg)">▸</span>`:''}${h.nama}</span><span class="num">${fmtRp(total)}${fmtPct(total,pctBasis)}</span></div>`;
+    html += `<div class="akun-header-toggle" data-collapse-key="${key}" style="border-radius:6px;margin:3px 0 2px;padding:3px 6px 3px ${10+depth*14}px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.8px;font-weight:700;${collapseMap?'cursor:pointer;user-select:none':''}"><span style="display:flex;align-items:center;gap:6px">${collapseMap?`<span class="mini" style="display:inline-block;width:10px;transition:transform .15s;transform:rotate(${collapsed?'0':'90'}deg)">▸</span>`:''}${h.nama}</span><span class="num">${fmtRp(total)}${fmtPct(total,pctBasis)}</span></div>`;
     if(collapsed) return;
     headers.filter(x=>x.parentHeaderId===h.id).forEach(ch=> renderHeader(ch, depth+1));
     list.filter(a=>a.parentHeaderId===h.id).forEach(a=>{
@@ -16165,9 +16354,25 @@ function applyStickyTabsIcon(){
   const topbar = document.getElementById('topbar');
   const bar = document.querySelector('.tabs2-icon');
   if(!topbar || !bar) return;
-  bar.style.top = topbar.offsetHeight + 'px';
+  // Ambil tinggi topbar SETELAH browser selesai layout (rAF), bukan langsung saat fungsi
+  // dipanggil — supaya angkanya akurat & tidak "nyangkut" ke tinggi lama kalau topbar baru
+  // saja berubah tinggi (mis. wrap jadi 2 baris di HP, font baru selesai load, dll).
+  requestAnimationFrame(()=>{
+    bar.style.top = topbar.getBoundingClientRect().height + 'px';
+  });
 }
 window.addEventListener('resize', applyStickyTabsIcon);
+/* Selain lewat resize/render, pantau tinggi #topbar terus-menerus lewat ResizeObserver —
+   supaya begitu tingginya berubah kapan saja (rotasi HP, font/ikon baru selesai load, dst),
+   posisi tab-icon otomatis ikut menyesuaikan tanpa perlu event tambahan. Ini yang bikin bar
+   ikon selalu presisi menempel tepat di bawah topbar, tanpa celah, walau discroll naik-turun. */
+if(typeof ResizeObserver!=='undefined'){
+  window.addEventListener('DOMContentLoaded', ()=>{
+    const topbar = document.getElementById('topbar');
+    if(!topbar) return;
+    new ResizeObserver(applyStickyTabsIcon).observe(topbar);
+  });
+}
 
 RENDERERS.report = function(c){
   const admin = isAdmin();
@@ -16278,7 +16483,7 @@ RENDERERS.neraca = function(c){
     if(akunsKat.length===0) return;
     const subtotal = asetKatSubtotal[kat];
     const subtotalRaw = kat==='KAT' ? -subtotal : subtotal;
-    html += `<div style="margin-bottom:10px"><div style="font-weight:700;font-size:12.8px;color:var(--accent,#3b82f6);margin-bottom:4px">${KAT[kat]}${kat==='KAT'?' (pengurang aset)':''} <span class="mini" style="font-weight:400">— ${kat==='KAT'?'-':''}${fmtRp(subtotalRaw)}${fmtPct(subtotal,totalAsetAll)}</span></div>`;
+    html += `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700;font-size:12.8px;color:#1a3c6e;background:#DBEAFE;padding:4px 10px;border-radius:7px;margin-bottom:4px"><span>${KAT[kat]}${kat==='KAT'?' (pengurang aset)':''}</span><span class="mini" style="font-weight:400">${kat==='KAT'?'-':''}${fmtRp(subtotalRaw)}${fmtPct(subtotal,totalAsetAll)}</span></div>`;
     // Flat, tidak dikelompokkan per kepemilikan — semua akun strata sama.
     html += renderAkunGroupHtml(akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), getSaldo, neracaCollapse, totalAsetAll);
     html += `</div>`;
@@ -16291,13 +16496,13 @@ RENDERERS.neraca = function(c){
     const akunsKat = DB.coa.filter(a=>a.kategori===kat);
     const subtotal = akunsKat.reduce((s,a)=>s+getSaldo(a),0);
     totalKW += subtotal;
-    html += `<div style="margin-bottom:10px"><div style="font-weight:700;font-size:12.8px;color:var(--accent,#3b82f6);margin-bottom:4px">${KAT[kat]} <span class="mini" style="font-weight:400">— ${fmtRp(subtotal)}${fmtPct(subtotal,totalAsetAll)}</span></div>`;
+    html += `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700;font-size:12.8px;color:#1a3c6e;background:#DBEAFE;padding:4px 10px;border-radius:7px;margin-bottom:4px"><span>${KAT[kat]}</span><span class="mini" style="font-weight:400">${fmtRp(subtotal)}${fmtPct(subtotal,totalAsetAll)}</span></div>`;
     // Flat, tidak dikelompokkan per kepemilikan — semua akun strata sama.
     html += renderAkunGroupHtml(akunsKat.filter(a=>!isSaldoNolUntukTampilan(getSaldo(a))), getSaldo, neracaCollapse, totalAsetAll);
     html += `</div>`;
   });
   html += `<div style="display:flex;justify-content:space-between;font-size:12.8px;padding:4px 0;font-weight:700"><span>Total Kewajiban</span><span>${fmtRp(totalKW)}${fmtPct(totalKW,totalAsetAll)}</span></div>`;
-  html += `<div style="font-weight:700;font-size:12.8px;color:var(--accent,#3b82f6);margin:14px 0 4px">Modal</div>`;
+  html += `<div style="font-weight:700;font-size:12.8px;color:#1a3c6e;background:#DBEAFE;display:inline-block;padding:4px 10px;border-radius:7px;margin:14px 0 4px">Modal</div>`;
   let totalMD = 0;
   // Flat: seluruh akun MD dan Laba Ditahan/Berjalan dihitung dari SEMUA akun (kep=null), tidak
   // dikelompokkan/difilter per kepemilikan lagi — semua akun strata sama, tidak ada yang hilang.
@@ -16334,8 +16539,9 @@ RENDERERS.neraca = function(c){
   if(nrTanggalEl) nrTanggalEl.addEventListener('change', e=>{ neracaFilter.tanggal = e.target.value; renderContent(); });
   c.querySelectorAll('.akun-clickable').forEach(el=> el.addEventListener('click', ()=>{
     const akun = akunById(el.dataset.akun);
-    const d = openDetailDrawer(akun.nama+' — Saldo per '+fmtTgl(tgl)+': '+fmtRp(getSaldo(akun)), akunTransaksiHtml(akun.id, 30, tgl), {centered:true});
-    bindJurnalRowActions(d);
+    const bulanAwal = tgl.slice(0,7);
+    const d = openDetailDrawer(akun.nama+' — Saldo per '+fmtTgl(tgl)+': '+fmtRp(getSaldo(akun)), '<div data-akuntrx-body></div>', {centered:true});
+    bindAkunTrxDrawer(d, akun.id, bulanAwal);
   }));
 };
 
@@ -16760,7 +16966,7 @@ function renderLabaRugiRingkasan(c){
   const kategoriBlockHtml = kat=>{
     const akunsKat = DB.coa.filter(a=>a.kategori===kat);
     const subtotal = sumByKategoriKepemilikanFiltered(kat, null, jlist);
-    let h = `<div style="margin-bottom:2px"><div style="font-weight:700;font-size:13px;color:var(--accent,#3b82f6);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:6px">${KAT[kat]}</div>`;
+    let h = `<div style="margin-bottom:2px"><div style="font-weight:700;font-size:13px;color:#1a3c6e;background:#DBEAFE;display:inline-block;padding:4px 10px;border-radius:7px;margin-bottom:6px">${KAT[kat]}</div>`;
     // Rincian akun ditampilkan flat (tidak dikelompokkan per kepemilikan lagi) — semua akun
     // kategori ini strata-nya sama, supaya tidak ada akun yang hilang dari rincian gara-gara
     // field kepemilikan-nya tidak cocok dengan salah satu grup.
@@ -16791,7 +16997,7 @@ function renderLabaRugiRingkasan(c){
   ['PK','BK'].forEach(kat=>{
     const akunsKat = DB.coa.filter(a=>a.kategori===kat);
     const subtotal = sumByKategoriKepemilikanFiltered(kat, null, jlist);
-    html += `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:var(--accent,#3b82f6);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:6px"><span>${KAT[kat]}</span><span>${fmtRp(subtotal)}${fmtPct(subtotal,totalPDBasis)}</span></div>`;
+    html += `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:#1a3c6e;background:#DBEAFE;padding:4px 10px;border-radius:7px;margin-bottom:6px"><span>${KAT[kat]}</span><span>${fmtRp(subtotal)}${fmtPct(subtotal,totalPDBasis)}</span></div>`;
     const getSaldoPeriode = a=> sumByKategoriKepemilikanFiltered(kat, null, jlist.filter(j=>j.debitId===a.id||j.kreditId===a.id));
     const listNonzero = akunsKat.filter(a=> !a.isHeader && getSaldoPeriode(a)!==0);
     html += listNonzero.length ? renderAkunGroupHtml(listNonzero, getSaldoPeriode, lrCollapse, totalPDBasis)
@@ -16836,13 +17042,14 @@ function renderLabaRugiRingkasan(c){
   const sampaiEl = document.getElementById('lrSampai'); if(sampaiEl) sampaiEl.addEventListener('change', e=>{ lrFilter.sampai=e.target.value; renderContent(); });
   c.querySelectorAll('.akun-clickable').forEach(el=> el.addEventListener('click', ()=>{
     const akun = akunById(el.dataset.akun);
-    const rows = jlist.filter(j=>j.debitId===akun.id||j.kreditId===akun.id);
-    let rowsHtml = `<div class="tablewrap"><table class="sheet"><thead><tr><th>No</th><th>Tanggal</th><th>Keterangan</th><th>D/K</th><th>Nominal</th><th></th></tr></thead><tbody>
-    ${rows.length? rows.slice().reverse().map(j=>`<tr data-jid="${j.id}"><td><a href="#" class="goto-jurnal-link" data-jid="${j.id}" title="Buka transaksi ini di Jurnal Umum" style="color:var(--accent,#3b82f6);font-weight:600;text-decoration:underline;cursor:pointer">${j.no}</a></td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td>${j.debitId===akun.id?'Debit':'Kredit'}</td><td class="num">${fmtRp(j.nominal)}</td><td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null,iconMode:true})}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">Tidak ada transaksi pada periode ini</td></tr>'}
-    </tbody></table></div>
-    <div class="mini" style="margin-top:8px">Mengubah/menghapus transaksi di sini otomatis memperbarui angka Laba Rugi.</div>`;
-    const d = openDetailDrawer(akun.nama+' — periode terpilih', rowsHtml, {centered:true});
-    bindJurnalRowActions(d);
+    // Anchor bulan awal popup = bulan akhir periode Laba Rugi yang sedang difilter (atau bulan ini
+    // kalau periode tidak dibatasi, mis. mode 'tahun_ini' tanpa tanggal sampai) — dari titik ini
+    // pengguna bebas geser ke bulan sebelum/sesudahnya lewat tombol navigasi.
+    const [, lrSampaiRange] = lrFilter.mode==='custom' ? [lrFilter.dari, lrFilter.sampai] : dateRangeForMode(lrFilter.mode);
+    const bulanAwal = (lrSampaiRange || todayStr()).slice(0,7);
+    const bodyHtml = '<div data-akuntrx-body></div><div class="mini" style="margin-top:8px">Mengubah/menghapus transaksi di sini otomatis memperbarui angka Laba Rugi.</div>';
+    const d = openDetailDrawer(akun.nama+' — rincian transaksi', bodyHtml, {centered:true});
+    bindAkunTrxDrawer(d, akun.id, bulanAwal);
   }));
 }
 
@@ -16931,7 +17138,7 @@ function renderLabaRugiCompareRincian(periods, periodJlists){
     if(!rows.length) return;
     rows.sort((a,b)=> Math.abs(b.change)-Math.abs(a.change));
     html += `<details class="card" style="margin-bottom:10px" open>
-      <summary style="cursor:pointer;font-family:Poppins;font-weight:700;color:var(--accent,#3b82f6)">${KAT[kat]}</summary>
+      <summary style="cursor:pointer;font-family:Poppins;font-weight:700;color:#1a3c6e;background:#DBEAFE;display:inline-block;padding:4px 10px;border-radius:7px">${KAT[kat]}</summary>
       <div class="tablewrap" style="margin-top:10px"><table class="sheet"><thead><tr>
         <th>Akun</th>${periods.map(p=>`<th class="num">${p.label}</th>`).join('')}<th class="num">Perubahan</th><th>Penyebab Kenaikan/Penurunan</th>
       </tr></thead><tbody>
@@ -18413,7 +18620,7 @@ function asetRiwayatHtml(a){
   /* Akum. Berjalan/Nilai Buku dihitung dari seluruh riwayat berurutan dulu (baru dipotong per
      halaman) supaya angkanya tetap benar walau baris yang ditampilkan hanya sebagian. */
   const pageKey = 'asetRiwayat-'+a.id;
-  const { pageRows, page, totalPages, total, pageSize } = paginateRows(pageKey, rowsData);
+  const { pageRows, page, totalPages, total, pageSize } = paginateRows(pageKey, rowsData, 5);
   const rowsHtml = pageRows.join('');
   const bisaHargaPasar = asetBisaHargaPasar(a);
   const margin = marginHargaPasarAset(a);
@@ -18457,9 +18664,9 @@ function asetRiwayatHtml(a){
     </tbody></table></div>${paginationBarHtml(pageKey, page, totalPages, total, pageSize)}`;
 }
 function openAsetRiwayat(a){
-  const d = openDetailDrawer('Riwayat Penyusutan — '+a.nama, asetRiwayatHtml(a));
+  const d = openDetailDrawer('Riwayat Penyusutan — '+a.nama, asetRiwayatHtml(a), {centered:true});
   bindJurnalRowActions(d);
-  const totalPages = Math.max(1, Math.ceil(DB.jurnal.filter(j=>j.ref==='aset-dep-'+a.id).length/PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(DB.jurnal.filter(j=>j.ref==='aset-dep-'+a.id).length/5));
   bindPaginationUI(d, 'asetRiwayat-'+a.id, totalPages, ()=> openAsetRiwayat(a));
   const dariEl = d.querySelector('#asetRiwayatDari_'+a.id);
   const sampaiEl = d.querySelector('#asetRiwayatSampai_'+a.id);
@@ -18670,7 +18877,7 @@ function asetIoCfg(){
   };
 }
 RENDERERS.aset = function(c){
-  if(jalankanAutoPenyusutanAset()) save();
+  if(jalankanAutoPenyusutanAset() | dedupAmorJurnalOngoing()) save();
   ensureRuanganCustom();
   DB.aset.forEach(a=>{ if(!Array.isArray(a.lokasiFolderIds)) a.lokasiFolderIds = a.lokasiFolderId? [a.lokasiFolderId] : []; if(!Array.isArray(a.ruangan)) a.ruangan = []; });
   // Opsi filter Ruangan: gabungan DB.ruanganCustom + ruangan yang sudah kepakai di aset (jaga-jaga
@@ -18722,7 +18929,6 @@ RENDERERS.aset = function(c){
       <div style="min-width:0">${tagInputHtml('asTagInput', {initialValue:(dupPre&&dupPre.tags?dupPre.tags.join(', '):'')})}</div>
       <div style="min-width:0">${buktiUploadHtml('asBukti')}</div>
     </div>
-    <div class="mini" id="asHintMasa" style="margin-top:4px">Jika Masa Manfaat diisi tapi Akun Akumulasi Penyusutan / Akun Beban Penyusutan dikosongkan, akun-akun tersebut akan dibuat/dipilih otomatis, supaya beban penyusutan otomatis bisa diposting dan ikut mengurangi laba rugi tiap bulan lewat tombol "Posting Penyusutan" di tabel bawah.</div>
     <div class="mini" style="margin:10px 0 0">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="asDiskonCheck" style="width:16px;height:16px;flex:none"> Diskon</label>
       <div class="formgrid" id="asDiskonWrap" style="display:none;margin-top:6px">
@@ -18780,7 +18986,7 @@ RENDERERS.aset = function(c){
   bindIoToolbar('aset', asetIoCfg());
   function updateAsetFormVisibility(){
     const nonDep = !!document.getElementById('asNonDep')?.checked;
-    ['asFieldMasa','asFieldAkum','asFieldBeban','asHintMasa'].forEach(id=>{
+    ['asFieldMasa','asFieldAkum','asFieldBeban'].forEach(id=>{
       const el = document.getElementById(id);
       if(el) el.style.display = nonDep ? 'none' : '';
     });
@@ -19261,7 +19467,7 @@ function openRiwayatDetail(log){
     } else {
       actionsHtml = `<div class="mini" style="margin-top:12px">✓ Sudah direstore</div>`;
     }
-    const d = openDetailDrawer('Detail Transaksi', html+actionsHtml);
+    const d = openDetailDrawer('Detail Transaksi', html+actionsHtml, {centered:true});
     bindBuktiCellClicks(d);
     if(masihAda){
       bindJurnalRowActions(d);
@@ -19283,7 +19489,7 @@ function openRiwayatDetail(log){
       <tr><td class="mini">Tanggal</td><td>${fmtTgl(p.tanggal||p.tanggalInput)||'-'}</td></tr>
       <tr><td class="mini">Status Saat Ini</td><td>${masihAda?'Masih ada di daftar Project':'Sudah dihapus dari daftar Project'}</td></tr>
     </tbody></table></div>`;
-    openDetailDrawer('Detail Project (Riwayat)', html);
+    openDetailDrawer('Detail Project (Riwayat)', html, {centered:true});
     return;
   }
   if(jenis==='travel'){
@@ -19295,7 +19501,7 @@ function openRiwayatDetail(log){
       <tr><td class="mini">Berangkat</td><td>${t.tglBerangkat?fmtTgl(t.tglBerangkat):'-'}</td></tr>
       <tr><td class="mini">Status Saat Ini</td><td>${masihAda?'Masih ada di daftar Budgeting Travel':'Sudah dihapus dari daftar Budgeting Travel'}</td></tr>
     </tbody></table></div>`;
-    openDetailDrawer('Detail Folder Trip (Riwayat)', html);
+    openDetailDrawer('Detail Folder Trip (Riwayat)', html, {centered:true});
     return;
   }
   if(jenis==='resep'){
@@ -19307,7 +19513,7 @@ function openRiwayatDetail(log){
       <tr><td class="mini">Jumlah Porsi</td><td>${rs.jumlahPorsi||1}</td></tr>
       <tr><td class="mini">Status Saat Ini</td><td>${masihAda?'Masih ada di daftar Resep':'Sudah dihapus dari daftar Resep'}</td></tr>
     </tbody></table></div>`;
-    openDetailDrawer('Detail Resep (Riwayat)', html);
+    openDetailDrawer('Detail Resep (Riwayat)', html, {centered:true});
     return;
   }
 }
@@ -19692,7 +19898,7 @@ RENDERERS.settings = function(c){
       </tr>`).join('')}
       </tbody></table></div>
       <button class="btn primary" id="btnSavePermUser" style="margin-top:12px">Simpan Akses</button>`;
-      const d = openDetailDrawer('Atur Akses — '+(u.nama||u.email), html);
+      const d = openDetailDrawer('Atur Akses — '+(u.nama||u.email), html, {centered:true});
       bindViewOnlyToggle(d, 'dPermView', 'dPermEdit', 'dPermDelete');
       d.querySelector('#btnSavePermUser').addEventListener('click', ()=>{
         d.querySelectorAll('.dPermView').forEach(cb=>{ u.permissions[cb.dataset.modul].view = cb.checked; });
