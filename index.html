@@ -8813,6 +8813,55 @@ function hapusRiwayatImporJurnal(historyId){
   save(); renderContent();
   toast('Riwayat impor dihapus, '+toRemove.length+' baris jurnal ikut dihapus');
 }
+// Tabel "Riwayat Amortisasi" di bawah Riwayat Impor (Jurnal Umum) — daftar akun beban dibayar
+// dimuka yang sedang/pernah diamortisasi (DB.biaya dengan amortisasi:true), baik yang dibuat dari
+// menu Biaya maupun dari checkbox "Amortisasi" di Tambah Jurnal. Tiap baris mewakili SATU jadwal
+// amortisasi lewat transaksi "Bayar dimuka"-nya (transaksi amortisasi pertama kali, ref
+// 'biaya-bayar-<id>') — bukan tiap posting harian/bulanannya — supaya daftar ini ringkas walau
+// amortisasinya sudah berjalan puluhan hari. Tombol hapus (simbol 🗑) per baris akan menghapus
+// SELURUH transaksi amortisasi milik jadwal itu sekaligus (lihat hapusRiwayatAmortisasi).
+function jurnalRiwayatAmortisasiHtml(){
+  const list = (DB.biaya||[]).filter(b=>b.amortisasi).slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
+  const { pageRows, page, totalPages, total, pageSize } = paginateRows('riwayatAmortisasiJurnal', list, 5);
+  const rows = pageRows.map(b=>{
+    const terposting = biayaPeriodeTerposting(b), jumlah = biayaJumlahPeriode(b);
+    const selesai = biayaAmortisasiSelesai(b);
+    return `<tr>
+      <td class="wrap-cell" style="text-align:center">${fmtTgl(b.tanggal)}</td>
+      <td class="wrap-cell" style="text-align:center">${escHtml(b.keterangan || akunById(b.bebanId)?.nama || '-')}</td>
+      <td class="num" style="text-align:center">${fmtRp(b.nominal||0)}</td>
+      <td class="wrap-cell" style="text-align:center">${terposting}/${jumlah} ${biayaPeriodeAmor(b)==='hari'?'hari':'bulan'}${selesai?' <span class="mini">(selesai)</span>':''}</td>
+      <td style="text-align:center"><button class="btn small danger btnHapusRiwayatAmortisasi" data-id="${b.id}" type="button" title="Hapus seluruh transaksi amortisasi ini">🗑</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="tablewrap"><table class="sheet"><thead><tr><th style="text-align:center">Tanggal Mulai</th><th style="text-align:center">Keterangan</th><th style="text-align:center">Nominal</th><th style="text-align:center">Progress</th><th></th></tr></thead><tbody>
+  ${rows || '<tr><td colspan="5" class="empty" style="text-align:center">Belum ada riwayat amortisasi</td></tr>'}
+  </tbody></table></div>${paginationBarHtml('riwayatAmortisasiJurnal', page, totalPages, total, pageSize)}`;
+}
+function renderJurnalRiwayatAmortisasiTable(){
+  const wrap = document.getElementById('jurnalRiwayatAmortisasiWrap'); if(!wrap) return;
+  const total = (DB.biaya||[]).filter(b=>b.amortisasi).length;
+  const totalPages = Math.max(1, Math.ceil(total/5));
+  wrap.innerHTML = jurnalRiwayatAmortisasiHtml();
+  wrap.querySelectorAll('.btnHapusRiwayatAmortisasi').forEach(btn=> btn.addEventListener('click', ()=> hapusRiwayatAmortisasi(btn.dataset.id)));
+  bindPaginationUI(wrap, 'riwayatAmortisasiJurnal', totalPages, renderJurnalRiwayatAmortisasiTable);
+}
+// Hapus 1 jadwal amortisasi beserta SELURUH transaksi yang sudah diposting untuknya: transaksi
+// "Bayar dimuka" awal (ref 'biaya-bayar-<id>'), semua posting harian/bulanan otomatis
+// (ref 'biaya-amor-<id>-<n>'), dan posting "percepat" kalau ada (ref 'biaya-amor-<id>-percepat') —
+// lalu jadwal amortisasinya sendiri (DB.biaya) ikut dihapus supaya tidak diposting ulang lagi oleh
+// jalankanAutoAmortisasi(). Sama pola dengan hapusRiwayatImporJurnal.
+function hapusRiwayatAmortisasi(biayaId){
+  const b = (DB.biaya||[]).find(x=>x.id===biayaId);
+  if(!b) return;
+  if(!confirm('Hapus riwayat amortisasi ini? Transaksi "Bayar dimuka" awal beserta SELURUH posting amortisasi otomatis yang sudah berjalan untuk "'+(b.keterangan||akunById(b.bebanId)?.nama||'-')+'" akan TERHAPUS SEMUA dari Jurnal Umum. Tindakan ini tidak bisa dibatalkan.')) return;
+  const toRemove = DB.jurnal.filter(j=> j.ref==='biaya-bayar-'+b.id || (j.ref||'').startsWith('biaya-amor-'+b.id+'-'));
+  toRemove.forEach(j=> catatRiwayat('hapus', j));
+  DB.jurnal = DB.jurnal.filter(j=> !(j.ref==='biaya-bayar-'+b.id || (j.ref||'').startsWith('biaya-amor-'+b.id+'-')));
+  DB.biaya = (DB.biaya||[]).filter(x=>x.id!==biayaId);
+  save(); renderContent();
+  toast('Riwayat amortisasi dihapus, '+toRemove.length+' transaksi ikut dihapus');
+}
 RENDERERS.jurnal = function(c){
   if(isViewOnly('jurnal')){
     c.innerHTML = `${viewOnlyNoticeHtml('Jurnal Umum & Buku Besar')}
@@ -8843,7 +8892,11 @@ RENDERERS.jurnal = function(c){
   <div class="card" style="margin-top:14px">
   <div class="section-title"><h3>Riwayat Impor</h3></div>
   <div class="mini" style="margin-bottom:8px;line-height:1.6">Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh baris jurnal</b> yang dihasilkan dari impor Excel tersebut.</div>
-  <div id="jurnalRiwayatImporWrap"></div></div>`;
+  <div id="jurnalRiwayatImporWrap"></div></div>
+  <div class="card" style="margin-top:14px">
+  <div class="section-title"><h3>Riwayat Amortisasi</h3></div>
+  <div class="mini" style="margin-bottom:8px;line-height:1.6">Tiap baris mewakili satu jadwal amortisasi lewat transaksi "Bayar dimuka" pertamanya. Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh transaksi amortisasi otomatis</b> yang sudah berjalan untuk jadwal tersebut.</div>
+  <div id="jurnalRiwayatAmortisasiWrap"></div></div>`;
   c.innerHTML = html;
   bindJurnalRows();
   bindBuktiUpload('jBukti');
@@ -8855,6 +8908,7 @@ RENDERERS.jurnal = function(c){
   document.getElementById('jurnalSortInput').addEventListener('change', e=>{ jurnalSort=e.target.value; setPage('jurnal',1); renderJurnalTable(); });
   document.getElementById('jurnalStatusFilterInput').addEventListener('change', e=>{ jurnalStatusFilter=e.target.value; setPage('jurnal',1); renderJurnalTable(); });
   renderJurnalRiwayatImporTable();
+  renderJurnalRiwayatAmortisasiTable();
   document.getElementById('btnPostJurnal').addEventListener('click', ()=>{
     syncJurnalRowsFromDom();
     const debitRows = jurnalRows.filter(r=>r.tipe==='debit' && r.akunId && rupiahToNumber(r.nominal)>0);
