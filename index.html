@@ -3247,6 +3247,13 @@ function updateSyncButtonState(){
 }
 async function manualUpdateSync(){
   if(!cloudDocRef){ toast('⚠️ Sinkronisasi cloud belum aktif — pastikan sudah login & tersambung internet.'); return; }
+  // Jalankan dulu semua mesin auto-posting (amortisasi Biaya, amortisasi Pembelian, penyusutan
+  // Aset) tiap kali tombol sinkron ditekan, supaya transaksi yang jatuh tempo hari ini ikut
+  // tergenerate & ikut terkirim ke cloud — tidak perlu buka tab Biaya/Pembelian/Aset dulu
+  // secara manual sebelum sinkron. dedupAmorJurnalOngoing() ikut dipanggil supaya kalau ada
+  // dobel-posting dari device lain, langsung dibersihkan sebelum push.
+  const adaAutoPosting = jalankanAutoAmortisasi() | jalankanAutoAmortisasiPembelian() | jalankanAutoPenyusutanAset() | dedupAmorJurnalOngoing();
+  if(adaAutoPosting){ save(); renderContent(); }
   if(!hasUnsyncedChanges(activeLedgerId) && dirtySyncIds.size===0){
     toast('Tidak ada perubahan baru — semua transaksi sudah tersinkron ke cloud ✓');
     return;
