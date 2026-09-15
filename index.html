@@ -9904,6 +9904,12 @@ function fmtBulanLabelID(ym){
   const [y,m] = ym.split('-').map(Number);
   return new Date(y, m-1, 1).toLocaleDateString('id-ID', {month:'long', year:'numeric'});
 }
+/* Format 'YYYY-MM-DD' -> '15 September 2026' dst (Bahasa Indonesia), dipakai label navigasi harian
+   (lihat akunTransaksiHtml saat periode rincian sedang bergranularitas hari). */
+function fmtTglLabelID(iso){
+  const d = new Date(iso+'T00:00:00');
+  return d.toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'});
+}
 /* Geser string bulan 'YYYY-MM' sejumlah `delta` bulan (boleh negatif), dgn rollover tahun. */
 function shiftBulanYM(ym, delta){
   let [y,m] = ym.split('-').map(Number);
@@ -9913,58 +9919,73 @@ function shiftBulanYM(ym, delta){
   return y+'-'+String(m).padStart(2,'0');
 }
 
-/* Saldo akun tepat SEBELUM bulan tertentu dimulai (posisi awal bulan) — dipakai sebagai saldo
-   awal untuk menghitung Ending Balance berjalan per baris di akunTransaksiHtml. */
-function saldoSebelumBulan(akunId, bulan){
+/* Saldo akun tepat SEBELUM sebuah tanggal tertentu (posisi awal periode) — dipakai sebagai saldo
+   awal untuk menghitung Ending Balance berjalan per baris di akunTransaksiHtml. `tanggalAwal` boleh
+   berupa awal bulan (mis. '2026-09-01') maupun tanggal harian biasa, karena cuma dibandingkan
+   sebagai string ISO. */
+function saldoSebelumTanggal(akunId, tanggalAwal){
   const akun = akunById(akunId);
   if(!akun) return 0;
-  const awal = bulan+'-01';
   let debit=0, kredit=0;
   DB.jurnal.forEach(j=>{
-    if(j.tanggal>=awal) return;
+    if(j.tanggal>=tanggalAwal) return;
     if(j.debitId===akunId) debit+=j.nominal;
     if(j.kreditId===akunId) kredit+=j.nominal;
   });
   return normalIsDebit(akun.kategori) ? (debit-kredit) : (kredit-debit);
 }
-/* Rincian transaksi 1 akun, dibatasi per bulan yang sedang ditampilkan (bukan lagi limit N transaksi
-   terakhir) — tabel diikuti navigasi ‹ Sebelumnya / Selanjutnya › di bawahnya supaya bisa geser ke
-   bulan lain tanpa menutup popup. `bulan` format 'YYYY-MM'. Dipakai di Neraca & Laba Rugi
-   (lihat bindAkunTrxDrawer utk render awal + rebind saat ganti bulan).
+/* Alias lama (bulan saja) — tetap dipertahankan untuk kompatibilitas, cukup delegasikan ke
+   saldoSebelumTanggal dengan tanggal awal bulan tsb. */
+function saldoSebelumBulan(akunId, bulan){ return saldoSebelumTanggal(akunId, bulan+'-01'); }
+/* Rincian transaksi 1 akun, dibatasi per PERIODE yang sedang ditampilkan (bukan lagi limit N
+   transaksi terakhir) — tabel diikuti navigasi ‹ Sebelumnya / Selanjutnya › di bawahnya supaya bisa
+   geser ke periode lain tanpa menutup popup. `periode` berupa object granularitas:
+   {tipe:'bulan', bulan:'YYYY-MM'} atau {tipe:'hari', tanggal:'YYYY-MM-DD'} — granularitas ini
+   ditentukan oleh filter periode yang aktif di laporan pemanggilnya (lihat lrPeriodeRincian() utk
+   Laba Rugi: kalau filternya membatasi ke satu hari, popup ikut bergranularitas hari & tombol nav
+   geser per hari; selain itu tetap bergranularitas bulan seperti semula). Dipakai di Neraca & Laba
+   Rugi (lihat bindAkunTrxDrawer utk render awal + rebind saat ganti periode).
    Kolom "Ending Balance" menampilkan saldo akun BERJALAN setelah tiap baris transaksi (mulai dari
-   saldo di akhir bulan sebelumnya, lihat saldoSebelumBulan), supaya user langsung tahu saldo akun
-   di titik waktu manapun tanpa perlu menghitung manual — baris diurutkan kronologis (tanggal, lalu
-   nomor jurnal) supaya saldo berjalannya akurat.  */
-function akunTransaksiHtml(akunId, bulan){
+   saldo di awal periode, lihat saldoSebelumTanggal), supaya user langsung tahu saldo akun di titik
+   waktu manapun tanpa perlu menghitung manual — baris diurutkan kronologis (tanggal, lalu nomor
+   jurnal) supaya saldo berjalannya akurat. */
+function akunTransaksiHtml(akunId, periode){
   const akun = akunById(akunId);
-  const rows = DB.jurnal.filter(j=>(j.debitId===akunId || j.kreditId===akunId) && j.tanggal.slice(0,7)===bulan)
+  const isHari = periode.tipe==='hari';
+  const rows = DB.jurnal.filter(j=> (j.debitId===akunId || j.kreditId===akunId) && (isHari ? j.tanggal===periode.tanggal : j.tanggal.slice(0,7)===periode.bulan))
     .slice().sort((a,b)=> a.tanggal===b.tanggal ? (a.no-b.no) : (a.tanggal<b.tanggal?-1:1));
   const normalDebit = normalIsDebit(akun.kategori);
-  let saldoBerjalan = saldoSebelumBulan(akunId, bulan);
+  const tanggalAwal = isHari ? periode.tanggal : periode.bulan+'-01';
+  let saldoBerjalan = saldoSebelumTanggal(akunId, tanggalAwal);
+  const labelPeriode = isHari ? fmtTglLabelID(periode.tanggal) : fmtBulanLabelID(periode.bulan);
   return `<div class="tablewrap"><table class="sheet"><thead><tr><th>No</th><th>Tanggal</th><th>Keterangan</th><th>D/K</th><th>Nominal</th><th>Ending Balance</th><th></th></tr></thead><tbody>
   ${rows.length? rows.map(j=>{
     const isDebit = j.debitId===akunId;
     const efek = normalDebit ? (isDebit? j.nominal : -j.nominal) : (isDebit? -j.nominal : j.nominal);
     saldoBerjalan += efek;
     return `<tr data-jid="${j.id}"><td><a href="#" class="goto-jurnal-link" data-jid="${j.id}" title="Buka transaksi ini di Jurnal Umum" style="color:var(--accent,#3b82f6);font-weight:600;text-decoration:underline;cursor:pointer">${j.no}</a></td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td><span class="tag ${isDebit?'debit':'kredit'}">${isDebit?'Debit':'Kredit'}</span></td><td class="num">${fmtRp(j.nominal)}</td><td class="num">${fmtRp(saldoBerjalan)}</td><td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null,iconMode:true})}</td></tr>`;
-  }).join('') : `<tr><td colspan="7" class="empty">Tidak ada transaksi di bulan ${fmtBulanLabelID(bulan)}</td></tr>`}
+  }).join('') : `<tr><td colspan="7" class="empty">Tidak ada transaksi di ${isHari?'tanggal':'bulan'} ${labelPeriode}</td></tr>`}
   </tbody></table></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
     <button type="button" class="btn small" id="akunTrxPrevBulan">‹ Sebelumnya</button>
-    <div style="font-weight:700">${fmtBulanLabelID(bulan)}</div>
+    <div style="font-weight:700">${labelPeriode}</div>
     <button type="button" class="btn small" id="akunTrxNextBulan">Selanjutnya ›</button>
   </div>`;
 }
 
 /* Buka/isi ulang popup rincian transaksi akun (dipakai Neraca & Laba Rugi): render tabel+nav utk
-   `bulan` yang aktif, bind aksi baris (edit/hapus/goto jurnal) & tombol Sebelumnya/Selanjutnya —
-   klik salah satu tombol nav akan memanggil ulang fungsi ini dgn bulan baru tanpa menutup drawer. */
-function bindAkunTrxDrawer(drawerEl, akunId, bulan){
+   `periode` yang aktif, bind aksi baris (edit/hapus/goto jurnal) & tombol Sebelumnya/Selanjutnya —
+   klik salah satu tombol nav akan memanggil ulang fungsi ini dgn periode baru (digeser 1 hari kalau
+   periode.tipe==='hari', atau 1 bulan kalau 'bulan') tanpa menutup drawer. */
+function bindAkunTrxDrawer(drawerEl, akunId, periode){
   const body = drawerEl.querySelector('[data-akuntrx-body]');
-  body.innerHTML = akunTransaksiHtml(akunId, bulan);
+  body.innerHTML = akunTransaksiHtml(akunId, periode);
   bindJurnalRowActions(drawerEl);
-  body.querySelector('#akunTrxPrevBulan').addEventListener('click', ()=> bindAkunTrxDrawer(drawerEl, akunId, shiftBulanYM(bulan,-1)));
-  body.querySelector('#akunTrxNextBulan').addEventListener('click', ()=> bindAkunTrxDrawer(drawerEl, akunId, shiftBulanYM(bulan,1)));
+  const geserPeriode = delta => periode.tipe==='hari'
+    ? {tipe:'hari', tanggal: tambahHariTanggal(periode.tanggal, delta)}
+    : {tipe:'bulan', bulan: shiftBulanYM(periode.bulan, delta)};
+  body.querySelector('#akunTrxPrevBulan').addEventListener('click', ()=> bindAkunTrxDrawer(drawerEl, akunId, geserPeriode(-1)));
+  body.querySelector('#akunTrxNextBulan').addEventListener('click', ()=> bindAkunTrxDrawer(drawerEl, akunId, geserPeriode(1)));
 }
 
 /* Loncat dari rincian akun (Neraca, Buku Besar, dst) langsung ke baris transaksi yang
@@ -16588,7 +16609,7 @@ RENDERERS.neraca = function(c){
     const akun = akunById(el.dataset.akun);
     const bulanAwal = tgl.slice(0,7);
     const d = openDetailDrawer(akun.nama+' — Saldo per '+fmtTgl(tgl)+': '+fmtRp(getSaldo(akun)), '<div data-akuntrx-body></div>', {centered:true});
-    bindAkunTrxDrawer(d, akun.id, bulanAwal);
+    bindAkunTrxDrawer(d, akun.id, {tipe:'bulan', bulan:bulanAwal});
   }));
 };
 
@@ -16606,6 +16627,18 @@ function dateRangeForMode(mode){
   if(mode==='tahun_ini'){ return [fmt(new Date(now.getFullYear(),0,1)), fmt(now)]; }
   if(mode==='tahun_lalu'){ return [fmt(new Date(now.getFullYear()-1,0,1)), fmt(new Date(now.getFullYear()-1,11,31))]; }
   return [lrFilter.dari, lrFilter.sampai];
+}
+/* Tentukan granularitas popup "rincian transaksi" akun di Laba Rugi berdasarkan filter periode
+   yang sedang aktif: kalau lrFilter sedang membatasi laporan ke SATU hari saja (mode 'hari_ini',
+   'kemarin', atau 'custom' dengan Dari===Sampai), popup ikut bergranularitas harian (tombol
+   Sebelumnya/Selanjutnya geser per hari, hanya menampilkan transaksi tanggal itu). Selain itu
+   (minggu/bulan/tahun ini-lalu, atau custom yang rentangnya lebih dari 1 hari) popup tetap
+   bergranularitas bulanan seperti semula, dengan bulan awal = bulan dari tanggal akhir periode yang
+   difilter (atau bulan ini kalau periode tidak dibatasi, mis. custom tanpa tanggal Sampai). */
+function lrPeriodeRincian(){
+  const [dari, sampai] = lrFilter.mode==='custom' ? [lrFilter.dari, lrFilter.sampai] : dateRangeForMode(lrFilter.mode);
+  if(dari && sampai && dari===sampai) return {tipe:'hari', tanggal: dari};
+  return {tipe:'bulan', bulan: (sampai || todayStr()).slice(0,7)};
 }
 function filteredJurnal(){
   let [dari, sampai] = lrFilter.mode==='custom' ? [lrFilter.dari, lrFilter.sampai] : dateRangeForMode(lrFilter.mode);
@@ -17089,14 +17122,15 @@ function renderLabaRugiRingkasan(c){
   const sampaiEl = document.getElementById('lrSampai'); if(sampaiEl) sampaiEl.addEventListener('change', e=>{ lrFilter.sampai=e.target.value; renderContent(); });
   c.querySelectorAll('.akun-clickable').forEach(el=> el.addEventListener('click', ()=>{
     const akun = akunById(el.dataset.akun);
-    // Anchor bulan awal popup = bulan akhir periode Laba Rugi yang sedang difilter (atau bulan ini
-    // kalau periode tidak dibatasi, mis. mode 'tahun_ini' tanpa tanggal sampai) — dari titik ini
-    // pengguna bebas geser ke bulan sebelum/sesudahnya lewat tombol navigasi.
-    const [, lrSampaiRange] = lrFilter.mode==='custom' ? [lrFilter.dari, lrFilter.sampai] : dateRangeForMode(lrFilter.mode);
-    const bulanAwal = (lrSampaiRange || todayStr()).slice(0,7);
+    // Granularitas & anchor awal popup menyesuaikan filter Laba Rugi yang sedang aktif — lihat
+    // lrPeriodeRincian(): kalau difilter ke satu hari (mis. tgl 15), popup langsung menampilkan
+    // transaksi tanggal itu saja & nav geser per hari; kalau tidak, popup tetap per bulan seperti
+    // semula (anchor = bulan akhir periode yang difilter). Dari titik ini pengguna bebas geser ke
+    // periode sebelum/sesudahnya lewat tombol navigasi.
+    const periodeAwal = lrPeriodeRincian();
     const bodyHtml = '<div data-akuntrx-body></div><div class="mini" style="margin-top:8px">Mengubah/menghapus transaksi di sini otomatis memperbarui angka Laba Rugi.</div>';
     const d = openDetailDrawer(akun.nama+' — rincian transaksi', bodyHtml, {centered:true});
-    bindAkunTrxDrawer(d, akun.id, bulanAwal);
+    bindAkunTrxDrawer(d, akun.id, periodeAwal);
   }));
 }
 
