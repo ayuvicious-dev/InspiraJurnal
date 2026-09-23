@@ -4261,7 +4261,9 @@ function groupJurnalDisplayRows(rows){
 
 /* ---- Penyesuaian Stok Manual (+/-) — dipakai di Persediaan Bahan (produk) & Persediaan Barang (barang) ----
    Menambah/mengurangi stok secara manual (mis. stok fisik vs catatan beda) dan otomatis
-   memposting jurnal yang mengubah nilai Persediaan di Neraca serta Pendapatan/Beban Lain-lain di Laba Rugi.
+   memposting jurnal yang mengubah nilai Persediaan di Neraca serta akun Beban terkait di Laba Rugi:
+   stok berkurang (-) mendebit (menambah) akun Beban itu, stok bertambah (+) mengkredit
+   (mengurangi) akun Beban yang sama — bukan dicatat sebagai Pendapatan.
    Untuk Persediaan Barang, tiap item bisa punya akun Beban Operasional sendiri (item.akunBebanId, diisi
    lewat kolom "Beban Operasional" yang bisa diketik & dicari) — kalau diisi, semua jurnal yang mengeluarkan
    nilai dari persediaan (Auto Nol / stok habis maupun pengurangan stok manual) langsung didebit ke akun itu,
@@ -4311,12 +4313,13 @@ function prosesPenyesuaianStok(item, tipeInventaris, arah){
     const kep = item.kepemilikan||'Pribadi';
     const psAkun = akunPersediaanUntuk(kep, tipeInventaris, item);
     if(psAkun){
+      const blAkunDefault = DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep && a.nama==='Beban Lain-lain') || DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep);
+      const blAkun = akunBebanUntukItem(item) || blAkunDefault;
       if(arah==='plus'){
-        const pdAkun = DB.coa.find(a=>a.kategori==='PD' && a.kepemilikan===kep && a.nama==='Pendapatan Lain-lain (Penyesuaian Stok)') || DB.coa.find(a=>a.kategori==='PD' && a.kepemilikan===kep);
-        if(pdAkun) postJurnal({ tanggal:todayStr(), keterangan:'Penyesuaian stok (+) '+namaLabel+(ket?' — '+ket:''), debitId:psAkun.id, kreditId:pdAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
+        // Stok bertambah: debit Persediaan, kredit akun Beban yang sama dengan yang dipakai saat stok
+        // berkurang — jadi otomatis MENGURANGI saldo beban itu (bukan mencatatnya sebagai pendapatan).
+        if(blAkun) postJurnal({ tanggal:todayStr(), keterangan:'Penyesuaian stok (+) '+namaLabel+(ket?' — '+ket:''), debitId:psAkun.id, kreditId:blAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
       } else {
-        const blAkunDefault = DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep && a.nama==='Beban Lain-lain') || DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep);
-        const blAkun = akunBebanUntukItem(item) || blAkunDefault;
         if(blAkun) postJurnal({ tanggal:todayStr(), keterangan:'Penyesuaian stok (-) '+namaLabel+(ket?' — '+ket:''), debitId:blAkun.id, kreditId:psAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
       }
     }
@@ -16733,7 +16736,7 @@ RENDERERS.neraca = function(c){
 };
 
 /* ================= LABA RUGI (dengan filter tanggal & tag) ================= */
-let lrFilter = { mode:'bulan_ini', dari:'', sampai:'', tag:'' };
+let lrFilter = { mode:'hari_ini', dari:'', sampai:'', tag:'' };
 function dateRangeForMode(mode){
   const now = new Date();
   const pad = n=>String(n).padStart(2,'0');
