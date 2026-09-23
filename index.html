@@ -778,7 +778,7 @@ a.crumbLink:last-child{color:var(--accent,#3b82f6);font-weight:600}
   /* Di HP, bottom nav berbentuk pil melayang di tengah-bawah layar (lihat #bottomNav) —
      dock Budgeting dinaikkan supaya tidak bertumpukan/ketutupan pil itu. */
   #budgetingShortcutDock{bottom:calc(100px + env(safe-area-inset-bottom,0px))}
-  #content{padding:12px 14px 40px}
+  #content{padding:12px 14px calc(64px + 34px + env(safe-area-inset-bottom,0px) + 24px)}
   .card{padding:12px 12px;border-radius:11px}
   .grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr 1fr;gap:8px}
   /* Kartu Komposisi (donut chart) di Laba Rugi: di HP dibuat 1 kolom menurun, bukan ikut
@@ -4210,6 +4210,14 @@ function postJurnal({tanggal, keterangan, debitId, kreditId, nominal, sumber, re
   markDirtySync(entry.id);
   return entry;
 }
+/* Menghapus seluruh jurnal terkait 1 pembelian: posting awal ('pembelian-<id>') DAN setiap
+   posting amortisasi harian yang sudah terlanjur diposting ('pembelian-amor-<id>-N', termasuk
+   hasil "percepat"). Tanpa ini, kalau pembelian beramortisasi dihapus, jurnal amortisasi yang
+   sudah jalan akan tertinggal (orphan) — tidak konsisten dengan deleteBiayaEntry di fitur Biaya. */
+function deletePembelianJurnal(id){
+  DB.jurnal.filter(j=> !!(j.ref==='pembelian-'+id || (j.ref||'').startsWith('pembelian-amor-'+id+'-'))).forEach(j=> catatRiwayat('hapus', j));
+  DB.jurnal = DB.jurnal.filter(j=> !(j.ref==='pembelian-'+id || (j.ref||'').startsWith('pembelian-amor-'+id+'-')));
+}
 function deleteJurnalByRef(ref){
   DB.jurnal.filter(j=>j.ref===ref).forEach(j=> catatRiwayat('hapus', j));
   DB.jurnal = DB.jurnal.filter(j=>j.ref!==ref);
@@ -5572,7 +5580,7 @@ RENDERERS.dashboard = function(c){
     ${kadaluwarsaPg.pageRows.length? kadaluwarsaPg.pageRows.map(x=>{
       const lewat = x.sisa<0;
       return `<span class="chip ${lewat?'low':'warn'}">${lewat?'⛔':'⏰'} [${x.isB?'Barang':'Bahan'}] ${x.item.nama} — ${fmtNum(x.qty)} ${x.item.satuan} · kadaluwarsa ${fmtTgl(x.tgl)} (${lewat?'lewat '+Math.abs(x.sisa)+' hr':x.sisa+' hr lagi'}) · ${x.sumber}</span>`;
-    }).join('') : '<div class="mini">Belum ada bahan/barang yang mendekati kadaluwarsa. Isi Tanggal Kadaluwarsa saat mencatat Pembelian, atau saat menambah item baru / impor di Persediaan Bahan/Barang, supaya otomatis muncul di sini 1 bulan sebelum jatuh tempo.</div>'}
+    }).join('') : infoNoteHtml('Belum ada bahan/barang yang mendekati kadaluwarsa', 'Isi Tanggal Kadaluwarsa saat mencatat Pembelian, atau saat menambah item baru / impor di Persediaan Bahan/Barang, supaya otomatis muncul di sini 1 bulan sebelum jatuh tempo.')}
     ${paginationBarHtml('dashboardKadaluwarsa', kadaluwarsaPg.page, kadaluwarsaPg.totalPages, kadaluwarsaPg.total, kadaluwarsaPg.pageSize)}
   </div>`;
 
@@ -6587,7 +6595,13 @@ function openImageModal(src, title){
     modal.id = 'imgModal';
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(30,25,20,.75);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px';
     modal.innerHTML = `<div style="background:var(--paper);color:var(--ink);border-radius:14px;padding:14px;max-width:90vw;max-height:90vh;overflow:auto">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b id="imgModalTitle"></b><button class="btn small" id="imgModalClose">✕ Tutup</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+        <b id="imgModalTitle"></b>
+        <div style="display:flex;gap:6px">
+          <a class="btn small" id="imgModalDownload" download>⬇ Unduh</a>
+          <button class="btn small" id="imgModalClose">✕ Tutup</button>
+        </div>
+      </div>
       <img id="imgModalImg" style="max-width:100%;max-height:75vh;border-radius:10px;display:block">
     </div>`;
     document.body.appendChild(modal);
@@ -6596,6 +6610,12 @@ function openImageModal(src, title){
   }
   modal.querySelector('#imgModalImg').src = src;
   modal.querySelector('#imgModalTitle').textContent = title||'';
+  // Nama file unduhan diambil dari judul (mis. nama resep), disanitasi supaya aman lintas OS.
+  const dl = modal.querySelector('#imgModalDownload');
+  dl.href = src;
+  const ext = (src.match(/^data:image\/(\w+);/)||[])[1] || 'jpg';
+  const safeName = (title||'foto').trim().replace(/[^a-z0-9\-_ ]/gi,'').replace(/\s+/g,'-').toLowerCase() || 'foto';
+  dl.setAttribute('download', `${safeName}.${ext}`);
 }
 /* Gallery version of openImageModal — used for the "Bukti Foto" widget which can hold several photos.
    images: array of data-URLs, idx: which one to show first, title: label shown above the image. */
@@ -6815,15 +6835,20 @@ function resepSpinKelolaHtml(){
         <input id="newSpinKatInput" placeholder="Nama kategori baru (mis. Minuman)" style="flex:1;min-width:160px;max-width:260px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink)">
         <button class="btn small primary btn-blue" id="btnAddSpinKat">+ Tambah Kategori</button>
       </div>
+      ${DB.resepSpinKategori.length ? `<div style="margin-bottom:14px">
+        <input id="spinItemSearchInput" placeholder="🔍 Cari item yang sudah ada (cek dulu sebelum tambah, biar tidak double)..." style="width:100%;max-width:360px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink)">
+        <div class="mini" id="spinItemSearchCount" style="margin-top:4px"></div>
+      </div>` : ''}
       ${DB.resepSpinKategori.length ? DB.resepSpinKategori.map(k=>`
-        <div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">
+        <div class="spinKatBlock" data-katid="${k.id}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <button class="btn small btnRenameSpinKat" data-id="${k.id}" style="padding:1px 6px" title="Rename kategori">✎</button>
             <button class="btn small danger btnDelSpinKat" data-id="${k.id}" style="padding:1px 6px" title="Hapus kategori">✕</button>
             <div style="font-weight:700">${escHtml(k.nama)} <span class="mini">(${(k.items||[]).length} item)</span></div>
           </div>
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
-            ${(k.items||[]).length ? k.items.map((it,idx)=>`<span class="tag c" style="display:inline-flex;align-items:center;gap:4px;width:fit-content"><button class="btn small btnEditSpinItem" data-katid="${k.id}" data-idx="${idx}" style="padding:1px 6px" title="Edit item">✎</button><button class="btn small danger btnDelSpinItem" data-katid="${k.id}" data-idx="${idx}" style="padding:1px 6px" title="Hapus item">✕</button>${escHtml(it)}</span>`).join('') : '<div class="mini">Belum ada item</div>'}
+            ${(k.items||[]).length ? k.items.map((it,idx)=>`<span class="tag c spinItemTag" data-nama="${escHtml(it.toLowerCase())}" style="display:inline-flex;align-items:center;gap:4px;width:fit-content"><button class="btn small btnEditSpinItem" data-katid="${k.id}" data-idx="${idx}" style="padding:1px 6px" title="Edit item">✎</button><button class="btn small danger btnDelSpinItem" data-katid="${k.id}" data-idx="${idx}" style="padding:1px 6px" title="Hapus item">✕</button>${escHtml(it)}</span>`).join('') : '<div class="mini">Belum ada item</div>'}
+            <div class="mini spinItemNoMatch" style="display:none">Tidak ada item yang cocok di kategori ini</div>
           </div>
           <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
             <input class="inpNewSpinItem" data-katid="${k.id}" placeholder="Tambah item baru..." style="flex:0 1 260px;min-width:160px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--input-bg);color:var(--ink)">
@@ -6869,9 +6894,33 @@ function bindResepSpinKelolaEvents(panel){
     const v = (input?.value||'').trim();
     if(!v) return toast('Isi nama item');
     k.items = k.items || [];
+    if(k.items.some(it=>it.trim().toLowerCase()===v.toLowerCase())) return toast('Item ini sudah ada di kategori "'+k.nama+'"');
     k.items.push(v);
     refresh(); toast('Item ditambahkan');
   }));
+  // Cari item yang sudah ada (lintas kategori) supaya user bisa cek dulu sebelum menambah,
+  // biar tidak input rekomendasi yang sama dua kali.
+  const spinSearchInput = panel.querySelector('#spinItemSearchInput');
+  if(spinSearchInput){
+    spinSearchInput.addEventListener('input', ()=>{
+      const q = spinSearchInput.value.trim().toLowerCase();
+      let totalMatch = 0;
+      panel.querySelectorAll('.spinKatBlock').forEach(block=>{
+        let matchInBlock = 0;
+        const tags = block.querySelectorAll('.spinItemTag');
+        tags.forEach(tag=>{
+          const match = !q || (tag.dataset.nama||'').includes(q);
+          tag.style.display = match ? '' : 'none';
+          if(match) matchInBlock++;
+        });
+        totalMatch += matchInBlock;
+        const noMatchEl = block.querySelector('.spinItemNoMatch');
+        if(noMatchEl) noMatchEl.style.display = (q && tags.length && matchInBlock===0) ? '' : 'none';
+      });
+      const countEl = panel.querySelector('#spinItemSearchCount');
+      if(countEl) countEl.textContent = q ? (totalMatch+' item cocok ditemukan') : '';
+    });
+  }
   panel.querySelectorAll('.btnEditSpinItem').forEach(btn=> btn.addEventListener('click', ()=>{
     const k = DB.resepSpinKategori.find(x=>x.id===btn.dataset.katid); if(!k) return;
     const idx = Number(btn.dataset.idx);
@@ -7590,10 +7639,10 @@ function renderResepDetail(c){
       <div style="display:flex;gap:12px;align-items:center">
         ${r.gambar?`<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
           <img src="${r.gambar}" class="thumb" style="width:56px;height:56px;object-fit:cover;border-radius:10px;cursor:pointer">
-          <div style="display:flex;gap:6px;white-space:nowrap">
-            <label class="mini" style="cursor:pointer;color:var(--ink);font-weight:600">Ganti<input type="file" accept="image/*" class="ed-rimg hidden"></label>
-            <span class="mini">·</span>
-            <a href="#" class="mini btnHapusFotoResep" style="color:var(--kredit);font-weight:600">Hapus</a>
+          <div style="display:flex;gap:6px;white-space:nowrap;justify-content:center">
+            <label class="mini" title="Ganti Foto" style="cursor:pointer;color:var(--ink);font-weight:600">🔄<input type="file" accept="image/*" class="ed-rimg hidden"></label>
+            <a href="#" class="mini btnUnduhFotoResep" title="Unduh Foto" style="color:var(--ink);font-weight:600">⬇</a>
+            <a href="#" class="mini btnHapusFotoResep" title="Hapus Foto" style="color:var(--kredit);font-weight:600">🗑</a>
           </div>
         </div>`:`<label style="cursor:pointer;width:56px;height:56px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px">📷<input type="file" accept="image/*" class="ed-rimg hidden"></label>`}
         <div>
@@ -7800,6 +7849,21 @@ function renderResepDetail(c){
     // padahal tidak.
     openPhotoCropModal(f, b64=>{ setFotoFieldSaved(r,'gambar',b64); renderContent(); }, {aspect:1, frameW:320, outW:900, quality:0.72});
     e.target.value = '';
+  });
+  const btnUnduhFotoResep = c.querySelector('.btnUnduhFotoResep');
+  if(btnUnduhFotoResep) btnUnduhFotoResep.addEventListener('click', e=>{
+    e.preventDefault();
+    if(!r.gambar) return;
+    // Foto resep disimpan sebagai data-URL base64 (lihat openPhotoCropModal), jadi cukup dipasang
+    // langsung sebagai href elemen <a download> — tidak perlu fetch/blob karena sudah lokal di browser.
+    const ext = (r.gambar.match(/^data:image\/(\w+);/)||[])[1] || 'jpg';
+    const safeName = r.namaMenu.trim().replace(/[^a-z0-9\-_ ]/gi,'').replace(/\s+/g,'-').toLowerCase() || 'resep';
+    const a = document.createElement('a');
+    a.href = r.gambar;
+    a.download = `${safeName}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   });
   const btnHapusFotoResep = c.querySelector('.btnHapusFotoResep');
   if(btnHapusFotoResep) btnHapusFotoResep.addEventListener('click', e=>{
@@ -8555,7 +8619,7 @@ function renderJurnalRowsHtml(){
     <div class="jrow-amor" data-rid="${r.rid}" style="margin:-4px 0 10px 72px">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0;font-size:12.5px"><input type="checkbox" id="jRowAmorCheck_${r.rid}" class="jRowAmorCheck" style="width:16px;height:16px;flex:none" ${r.amortisasi?'checked':''}> Amortisasi</label>
       <div class="formgrid" id="jRowAmorWrap_${r.rid}" style="display:${r.amortisasi?'grid':'none'};margin-top:6px">
-        <div class="field"><label>Jumlah Hari</label><input type="number" min="1" id="jRowAmorHari_${r.rid}" class="jRowAmorHari" value="${r.amortisasiHari||30}"></div>
+        <div class="field"><label>Jumlah Hari</label><input type="number" min="1" id="jRowAmorHari_${r.rid}" class="jRowAmorHari" value="${r.amortisasiHari||''}" placeholder="mis. 30"></div>
         <div class="field" style="grid-column:span 2"><label>Akun Aktiva (dibayar dimuka)</label>${akunPickerHtml('jRowAktiva_'+r.rid, a=>a.kategori==='ALL', 'Ketik nama akun aktiva...', r.aktivaId)}</div>
         <div class="mini" style="grid-column:span 3">Nominal baris ini akan diposting ke Akun Aktiva di atas, lalu dibebankan otomatis setiap hari ke akun Debit yang dipilih (di atas) selama jumlah hari yang diisi.</div>
       </div>
@@ -9311,7 +9375,7 @@ RENDERERS.biaya = function(c){
     </div>
     <div class="formgrid" id="bPeriodeWrap" style="display:none">
       <div class="field"><label>Tipe Periode</label><select id="bPeriodeTipe"><option value="hari">Harian</option><option value="bulan">Bulanan</option></select></div>
-      <div class="field"><label>Jumlah Periode</label><input type="number" id="bBulan" value="12" min="1"></div>
+      <div class="field"><label>Jumlah Periode</label><input type="number" id="bBulan" placeholder="Contoh: 12" min="1"></div>
       <div class="field" style="grid-column:span 2"><label>Akun Dibayar Dimuka (aset)</label>${akunPickerHtml('bPrepaid', a=>a.kategori==='ALL', 'Ketik nama akun dibayar dimuka...')}</div>
       <div class="mini" style="grid-column:span 2;align-self:center">Diposting <b>otomatis setiap hari</b> saat jatuh tempo — tidak perlu diposting manual.</div>
     </div>
@@ -9356,11 +9420,12 @@ RENDERERS.biaya = function(c){
   document.getElementById('btnPostBiaya').addEventListener('click', ()=>{
     const bayarId=bBayar.value, bebanId=bBeban.value, nominal=rupiahToNumber(bNom.value), amortisasi=bAmor.checked;
     const periodeAmor = document.getElementById('bPeriodeTipe').value;
-    const jumlahPeriode=Number(bBulan.value)||12;
+    const jumlahPeriode=Number(bBulan.value)||0;
     const prepaidId = document.getElementById('bPrepaid').value;
     if(!bayarId||!bebanId) return toast('Lengkapi akun');
     if(!nominal||nominal<=0) return toast('Isi nominal');
     if(amortisasi && !prepaidId) return toast('Pilih akun Dibayar Dimuka (aset) yang sesuai');
+    if(amortisasi && jumlahPeriode<1) return toast('Isi Jumlah Periode');
     const akunBayar = akunById(bayarId);
     const isHutang = !!(akunBayar && akunBayar.kategori==='KW');
     const reminderPayment = isHutang && bReminderCheck.checked;
@@ -10577,7 +10642,7 @@ RENDERERS.pembelian = function(c){
       <div class="field" id="pKadaluwarsaWrap"><label>Tanggal Kadaluwarsa (opsional)</label><input type="date" id="pKadaluwarsa"></div>
       <div class="field" id="pKetWrap"><label>Keterangan</label><textarea id="pKet" rows="2" placeholder="mis. beli di Pasar Sentral"></textarea></div>
       <div class="field" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="pAmorCheck" style="width:16px;height:16px;flex:none"> Amortisasi (prorata beban sesuai jumlah hari)</label></div>
-      <div class="field" id="pAmorWrap" style="display:none;grid-column:span 2"><label>Jumlah Hari Amortisasi</label><input type="number" id="pAmorHari" min="1" value="30" placeholder="mis. 30"></div>
+      <div class="field" id="pAmorWrap" style="display:none;grid-column:span 2"><label>Jumlah Hari Amortisasi</label><input type="number" id="pAmorHari" min="1" placeholder="mis. 30"></div>
     </div>
     <div style="margin-bottom:8px">${infoNoteHtml('Amortisasi pembelian', `Kalau dicentang, nilai pembelian bahan/barang ini tidak langsung jadi beban, tapi diprorata (dibagi rata) ke Akun Beban BPP (saat stok habis/dipakai) item ini selama jumlah hari yang diisi — diposting <b>otomatis setiap hari</b> selama masa amortisasi berjalan, mirip amortisasi harian di menu Biaya. Qty stok item ini juga otomatis ikut berkurang bertahap setiap hari sesuai proporsinya, jadi <b>tidak perlu stock opname manual</b> saat barang/bahan ini habis terpakai.`)}</div>
     <div style="margin-bottom:8px">${infoNoteHtml('Beli beberapa produk sekaligus?', `Butuh beberapa produk dalam satu pembelian (satu struk/nota)? Isi Nama Bahan/Barang, Qty &amp; Total Harga di atas lalu klik <b>+ Tambah ke Daftar</b> untuk tiap produk. Tanggal, akun kredit, tag &amp; bukti di bawah berlaku untuk semua produk dalam daftar.`)}</div>
@@ -10679,7 +10744,7 @@ RENDERERS.pembelian = function(c){
   pAmorCheck.addEventListener('change', ()=>{
     const on = pAmorCheck.checked;
     pAmorWrap.style.display = on ? '' : 'none';
-    if(!on){ document.getElementById('pAmorHari').value='30'; }
+    if(!on){ document.getElementById('pAmorHari').value=''; }
   });
   document.getElementById('pembelianSearchInput').addEventListener('input', e=>{ pembelianSearch=e.target.value; setPage('pembelian',1); renderPembelianTable(); });
   document.getElementById('pembelianSortInput').addEventListener('change', e=>{ pembelianSort=e.target.value; setPage('pembelian',1); renderPembelianTable(); });
@@ -10750,7 +10815,7 @@ RENDERERS.pembelian = function(c){
     if(document.getElementById('pAmorCheck')){
       document.getElementById('pAmorCheck').checked=false;
       document.getElementById('pAmorWrap').style.display='none';
-      document.getElementById('pAmorHari').value='30';
+      document.getElementById('pAmorHari').value='';
     }
     renderPembelianCart();
     if(!silent) toast('Ditambahkan ke daftar');
@@ -10832,7 +10897,7 @@ RENDERERS.pembelian = function(c){
     if(document.getElementById('pAmorCheck')){
       document.getElementById('pAmorCheck').checked=false;
       document.getElementById('pAmorWrap').style.display='none';
-      document.getElementById('pAmorHari').value='30';
+      document.getElementById('pAmorHari').value='';
     }
     resetBuktiUpload('pBukti');
     renderPembelianCart();
@@ -10908,7 +10973,7 @@ function renderPembelianTable(){
     const p = DB.pembelian.find(x=>x.id===id); if(!p) return;
     reversePembelianEffect(p);
     DB.pembelian = DB.pembelian.filter(x=>x.id!==id);
-    deleteJurnalByRef('pembelian-'+id);
+    deletePembelianJurnal(id);
   }), ()=> renderPembelianTable());
   bindPaginationUI(wrap, 'pembelian', totalPages, renderPembelianTable);
 
@@ -10917,7 +10982,7 @@ function renderPembelianTable(){
     if(!confirm('Hapus pembelian ini? Stok terkait akan otomatis dikurangi kembali.')) return;
     reversePembelianEffect(p);
     DB.pembelian = DB.pembelian.filter(x=>x.id!==p.id);
-    deleteJurnalByRef('pembelian-'+p.id);
+    deletePembelianJurnal(p.id);
     save(); renderPembelianTable(); toast('Pembelian dihapus, stok persediaan disesuaikan');
   }));
   wrap.querySelectorAll('.btnEditPembelian').forEach(btn=> btn.addEventListener('click', ()=>{
@@ -10960,7 +11025,7 @@ function renderPembelianTable(){
         <div class="field" style="grid-column:span 2"><label>Akun Persediaan (aset)</label>${akunPickerHtml('epAkunPersediaan', a=>a.kategori==='PS', 'Ketik nama akun persediaan...', tipeAwal==='barang'?(curItemAwal?.akunPersediaanId||''):(curBahanAwal?.akunPersediaanId||''))}</div>
         <div class="field" style="grid-column:span 2" id="epBebanOpWrap"><label>Akun Beban BPP (saat stok habis/dipakai)</label>${akunPickerHtml('epBebanOp', a=>['BO','BL','BPP'].includes(a.kategori), 'Ketik nama akun beban...', tipeAwal==='barang'?(curItemAwal?.akunBebanId||''):(curBahanAwal?.akunBebanId||''))}</div>
         <div class="field" style="grid-column:span 2"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="epAmorCheck" style="width:16px;height:16px;flex:none" ${p.amortisasi?'checked':''}> Amortisasi (prorata beban sesuai jumlah hari)</label></div>
-        <div class="field" id="epAmorWrap" style="display:${p.amortisasi?'':'none'};grid-column:span 2"><label>Jumlah Hari Amortisasi</label><input type="number" id="epAmorHari" min="1" value="${p.amortisasiHari||30}" placeholder="mis. 30"></div>
+        <div class="field" id="epAmorWrap" style="display:${p.amortisasi?'':'none'};grid-column:span 2"><label>Jumlah Hari Amortisasi</label><input type="number" id="epAmorHari" min="1" value="${p.amortisasiHari||''}" placeholder="mis. 30"></div>
         <div class="field" style="grid-column:span 2"><label>Keterangan</label><textarea id="epKet" rows="2">${(p.keterangan||'').replace(/</g,'&lt;')}</textarea></div>
       </div>
       <button class="btn primary" id="epSave" style="margin-top:10px;width:100%">Simpan Perubahan</button>
@@ -10993,7 +11058,7 @@ function renderPembelianTable(){
     epAmorCheck.addEventListener('change', ()=>{
       const on = epAmorCheck.checked;
       epAmorWrap.style.display = on ? '' : 'none';
-      if(!on){ document.getElementById('epAmorHari').value='30'; }
+      if(!on){ document.getElementById('epAmorHari').value=''; }
     });
     function onItemPicked(itemId){
       if(editTipe==='barang'){
