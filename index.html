@@ -18153,7 +18153,7 @@ function openArusKasAkunRincian(kel, katLabel, akunNama){
   const rows = arusKasRowsCache
     .filter(r=> r.kelompok===kel && r.lawanKategoriLabel===katLabel && r.lawanNama===akunNama)
     .slice()
-    .sort((a,b)=> String(b.tanggal||'').localeCompare(String(a.tanggal||''))); // terbaru dulu (sort stabil)
+    .sort((a,b)=> String(a.tanggal||'').localeCompare(String(b.tanggal||'')) || ((a.no||0)-(b.no||0))); // terlama dulu (mis. 1 Sep -> 28 Sep), lalu urut nomor jurnal
   const total = rows.reduce((sum,r)=> sum + r.arah*r.nominal, 0);
   const [fDari, fSampai] = arusKasDateRange().map(v=>v||'');
   const periodeText = (fDari?fmtTgl(fDari):'Awal')+' s/d '+(fSampai?fmtTgl(fSampai):'Sekarang');
