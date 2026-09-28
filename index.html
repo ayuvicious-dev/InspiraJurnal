@@ -18155,16 +18155,17 @@ function openArusKasAkunRincian(kel, katLabel, akunNama){
     .slice()
     .sort((a,b)=> String(a.tanggal||'').localeCompare(String(b.tanggal||'')) || ((a.no||0)-(b.no||0))); // terlama dulu (mis. 1 Sep -> 28 Sep), lalu urut nomor jurnal
   const total = rows.reduce((sum,r)=> sum + r.arah*r.nominal, 0);
+  let saldoBerjalan = 0; // Ending Balance: akumulasi nominal berjalan (urut kronologis) sampai baris tsb
   const [fDari, fSampai] = arusKasDateRange().map(v=>v||'');
   const periodeText = (fDari?fmtTgl(fDari):'Awal')+' s/d '+(fSampai?fmtTgl(fSampai):'Sekarang');
   const warna = v=> v>=0 ? 'var(--debit)' : 'var(--kredit)';
   const bodyHtml = `<div class="mini" style="margin:-6px 0 10px;line-height:1.6">Aktivitas ${escHtml(kel)} › ${escHtml(katLabel)}<br>Periode: ${periodeText}<br>Klik kode untuk membuka transaksi di fitur asalnya.</div>
     <div class="tablewrap"><table class="sheet">
-      <thead><tr><th>Tanggal</th><th>Kode</th><th>Keterangan</th><th class="num">Nominal</th></tr></thead>
+      <thead><tr><th>Tanggal</th><th>Kode</th><th>Keterangan</th><th class="num">Nominal</th><th class="num">Ending Balance</th></tr></thead>
       <tbody>
-        ${rows.length ? rows.map(r=>`<tr><td>${fmtTgl(r.tanggal)}</td><td>${kodeTransaksiLinkHtml(r)}</td><td class="wrap-cell">${escHtml(r.keterangan||'-')}</td><td class="num" style="color:${warna(r.arah)}">${fmtRp(r.arah*r.nominal)}</td></tr>`).join('') : '<tr><td colspan="4" class="empty">Tidak ada transaksi pada periode ini</td></tr>'}
+        ${rows.length ? rows.map(r=>{ saldoBerjalan += r.arah*r.nominal; return `<tr><td>${fmtTgl(r.tanggal)}</td><td>${kodeTransaksiLinkHtml(r)}</td><td class="wrap-cell">${escHtml(r.keterangan||'-')}</td><td class="num" style="color:${warna(r.arah)}">${fmtRp(r.arah*r.nominal)}</td><td class="num" style="color:${warna(saldoBerjalan)}">${fmtRp(saldoBerjalan)}</td></tr>`; }).join('') : '<tr><td colspan="5" class="empty">Tidak ada transaksi pada periode ini</td></tr>'}
       </tbody>
-      <tfoot><tr style="font-weight:700;border-top:2px solid var(--ink)"><td colspan="3">Total (${rows.length} transaksi)</td><td class="num" style="color:${warna(total)}">${fmtRp(total)}</td></tr></tfoot>
+      <tfoot><tr style="font-weight:700;border-top:2px solid var(--ink)"><td colspan="3">Total (${rows.length} transaksi)</td><td class="num" style="color:${warna(total)}">${fmtRp(total)}</td><td></td></tr></tfoot>
     </table></div>`;
   const drawer = openDetailDrawer(escHtml(akunNama)+' — rincian transaksi', bodyHtml, {centered:true});
   // Ikat klik kode transaksi (goto-jurnal/biaya/aset/pembelian-link) -> pindah ke fitur asalnya.
