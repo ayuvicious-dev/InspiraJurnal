@@ -17360,9 +17360,10 @@ function simpulkanPenyebabLR(akun, jlistAwal, jlistAkhir){
   temuan.sort((x,y)=> Math.abs(y.delta)-Math.abs(x.delta));
   return temuan.slice(0,2).map(t=>t.teks).join('; ');
 }
-function renderLabaRugiCompareRincian(periods, periodJlists){
-  let html = '';
-  const jlistAwal = periodJlists[0]||[], jlistAkhir = periodJlists[periodJlists.length-1]||[];
+/* Data "Rincian per Akun" Bandingkan Periode Laba Rugi — dipakai bersama oleh tampilan layar dan
+   ekspor PDF supaya angka & catatan penyebab di keduanya selalu sama. */
+function labaRugiCompareRincianData(periods, periodJlists){
+  const out = [];
   ['PD','BPP','BO','PL','BL'].forEach(kat=>{
     const akunsKat = sortAkunList(DB.coa.filter(a=>a.kategori===kat && !a.isHeader));
     const rows = akunsKat.map(a=>{
@@ -17372,28 +17373,88 @@ function renderLabaRugiCompareRincian(periods, periodJlists){
     }).filter(r=> r.values.some(v=>v!==0));
     if(!rows.length) return;
     rows.sort((a,b)=> Math.abs(b.change)-Math.abs(a.change));
+    out.push({ kat, rows });
+  });
+  return out;
+}
+/* Unduh PDF "Rincian per Akun" (Bandingkan Periode Laba Rugi). Landscape; ukuran kertas dipilih
+   otomatis (A4/A3/A2) sesuai jumlah periode supaya semua kolom muat. Data dibaca ulang saat tombol
+   diklik, jadi catatan penyebab yang baru diedit ikut tercetak. Gaya mengikuti PDF Arus Kas. */
+function labaRugiCompareExportPdf(periods, periodJlists){
+  try{
+    const groups = labaRugiCompareRincianData(periods, periodJlists);
+    if(!groups.length) return toast('Belum ada data rincian untuk diunduh');
+    const { jsPDF } = window.jspdf;
+    const n = periods.length, last = n-1;
+    const fs = n>8 ? 6.8 : 8.4;
+    const firstW = 190, chgW = 72;
+    const perW = Math.ceil(11*fs*0.55 + 10);
+    const marginLeft = 32, marginRight = 32;
+    const needed = marginLeft + marginRight + firstW + n*perW + chgW;
+    const format = needed<=842 ? 'a4' : (needed<=1191 ? 'a3' : 'a2');
+    const doc = new jsPDF({ orientation:'landscape', unit:'pt', format });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const periodeText = 'Periode: '+periods[0].label+' s/d '+periods[last].label;
+    const startY = pdfDrawHeader(doc, 'Laporan Laba Rugi — Rincian per Akun', periodeText, { hideDownloadedAt:true });
+
+    const COL_HEAD = [20,20,20], COL_GROUP_BG = [232,232,232];
+    const COL_TEXT = [25,25,25], COL_SUB = [110,110,110];
+    const COL_BAIK = [22,130,70], COL_BURUK = [190,40,40];
+    const paren = v=> v<0 ? '('+fmtRp(Math.abs(v)).replace('Rp','').trim()+')' : fmtRp(v).replace('Rp','').trim();
+    const chg = v=> (v>0?'+':'')+paren(v);
+    const pad = { top:3, right:6, bottom:3, left:4 };
+
+    const nCols = n+2;
+    const body = [];
+    groups.forEach(g=>{
+      body.push([{ content: KAT[g.kat], colSpan:nCols, styles:{ fontStyle:'bold', fontSize:fs+1.2, textColor:[10,10,10], fillColor:COL_GROUP_BG, cellPadding:{ top:3.5, right:6, bottom:3.5, left:6 } } }]);
+      g.rows.forEach(r=>{
+        const naikBaik = g.kat==='PD' || g.kat==='PL';
+        const baik = r.change ? (naikBaik ? r.change>0 : r.change<0) : null;
+        const chgColor = baik===null ? COL_TEXT : (baik ? COL_BAIK : COL_BURUK);
+        const cells = [{ content: r.akun.nama + (r.akun.kepemilikan ? '  ('+r.akun.kepemilikan+')' : ''), styles:{ fontSize:fs, textColor:COL_TEXT, valign:'top', cellPadding:{ top:3, right:6, bottom:3, left:12 } } }];
+        r.values.forEach(v=> cells.push({ content: paren(v), styles:{ fontSize:fs, textColor:COL_TEXT, halign:'right', valign:'top', cellPadding:pad } }));
+        cells.push({ content: chg(r.change), styles:{ fontSize:fs, fontStyle:'bold', textColor:chgColor, halign:'right', valign:'top', cellPadding:pad } });
+        body.push(cells);
+      });
+    });
+
+    const columnStyles = { 0:{ cellWidth:firstW } };
+    for(let i=1;i<=n;i++) columnStyles[i] = { cellWidth:perW };
+    columnStyles[n+1] = { cellWidth:chgW };
+    const hs = { fillColor:COL_HEAD, textColor:255, fontStyle:'bold', fontSize:fs, cellPadding:{ top:5, right:6, bottom:5, left:6 } };
+    doc.autoTable({
+      startY, theme:'plain', styles:{ font:'helvetica', lineWidth:0, overflow:'linebreak' }, columnStyles,
+      margin:{ left:marginLeft, right:marginRight }, rowPageBreak:'avoid',
+      head:[[ { content:'Akun', styles:hs } ]
+        .concat(periods.map(p=>({ content:p.label, styles:Object.assign({}, hs, { halign:'right' }) })))
+        .concat([{ content:'Perubahan', styles:Object.assign({}, hs, { halign:'right' }) }])],
+      body
+    });
+    doc.save('laba-rugi-rincian-per-akun.pdf');
+    toast('File PDF diunduh');
+  }catch(err){ toast('Gagal membuat PDF: '+err.message); }
+}
+function renderLabaRugiCompareRincian(periods, periodJlists){
+  let html = '';
+  labaRugiCompareRincianData(periods, periodJlists).forEach(({kat, rows})=>{
     html += `<details class="card" style="margin-bottom:10px" open>
       <summary style="cursor:pointer;font-family:Poppins;font-weight:700;color:#1a3c6e;background:#DBEAFE;display:inline-block;padding:4px 10px;border-radius:7px">${KAT[kat]}</summary>
       <div class="tablewrap" style="margin-top:10px"><table class="sheet"><thead><tr>
-        <th>Akun</th>${periods.map(p=>`<th class="num">${p.label}</th>`).join('')}<th class="num">Perubahan</th><th>Penyebab Kenaikan/Penurunan</th>
+        <th>Akun</th>${periods.map(p=>`<th class="num">${p.label}</th>`).join('')}<th class="num">Perubahan</th>
       </tr></thead><tbody>
       ${rows.map(r=>{
-        const key = lrCatatanKey(r.akun.id, periods);
-        const manual = DB.lrCatatan && DB.lrCatatan[key];
-        const isAuto = !manual;
-        const catatan = manual || simpulkanPenyebabLR(r.akun, jlistAwal, jlistAkhir);
         return `<tr>
         <td>${escHtml(r.akun.nama)} <span class="mini">(${r.akun.kepemilikan})</span></td>
         ${r.values.map(v=>`<td class="num">${fmtRp(v)}</td>`).join('')}
         <td class="num" style="font-weight:700;color:${lrChangeColor(kat, r.change)}">${r.change>=0?'+':''}${fmtRp(r.change)}</td>
-        <td><textarea class="lr-catatan-input" data-key="${escHtml(key)}" data-auto="${isAuto?'1':'0'}" placeholder="Tulis alasan di sini..." title="${isAuto?'Kesimpulan otomatis dari sistem — bisa diedit/ditimpa manual':'Diisi manual'}" rows="1" style="width:100%;min-width:220px;resize:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word;font-family:inherit;line-height:1.4;${isAuto?'color:var(--ink-soft);font-style:italic':''}">${escHtml(catatan)}</textarea></td>
       </tr>`;}).join('')}
       </tbody></table></div>
     </details>`;
   });
   if(!html) html = '<div class="card"><div class="empty">Belum ada data akun untuk periode-periode ini</div></div>';
-  return `<div class="section-title" style="margin-top:14px"><h3>Rincian per Akun</h3></div>
-    <div style="margin-bottom:10px">${infoNoteHtml('Urutan tabel ini', `Diurutkan dari perubahan terbesar (periode pertama vs periode terakhir yang ditampilkan), supaya langsung terlihat akun mana yang naik atau turun paling banyak. Kolom terakhir terisi otomatis oleh sistem: membandingkan transaksi di periode pertama vs terakhir berdasarkan nama/keterangan dan kesamaan nominalnya, lalu menyimpulkan penyebabnya (transaksi baru, frekuensi naik/turun, atau nominal per transaksi naik/turun). Teks otomatis tampil miring — bisa diedit/ditimpa manual kapan saja dan akan tersimpan sebagai catatan tetap; kosongkan lagi untuk kembali ke kesimpulan otomatis.`)}</div>
+  return `<div class="section-title" style="margin-top:14px"><h3>Rincian per Akun</h3><div style="display:flex;gap:6px"><button class="btn small" id="lrCmpBtnPdf" type="button">⬇ PDF</button></div></div>
+    <div style="margin-bottom:10px">${infoNoteHtml('Urutan tabel ini', `Diurutkan dari perubahan terbesar (periode pertama vs periode terakhir yang ditampilkan), supaya langsung terlihat akun mana yang naik atau turun paling banyak.`)}</div>
     ${html}`;
 }
 function bindLrCatatanInputs(c){
@@ -17459,6 +17520,7 @@ function renderLabaRugiCompare(c){
   ${renderLabaRugiCompareRincian(periods, periodJlists)}`;
   c.innerHTML = html;
   bindLrCatatanInputs(c);
+  document.getElementById('lrCmpBtnPdf').addEventListener('click', ()=> labaRugiCompareExportPdf(periods, periodJlists));
 
   document.getElementById('btnLrCmpTampilkan').addEventListener('click', ()=>{
     lrCompareTipe = document.getElementById('lrCmpTipe').value;
@@ -17825,15 +17887,18 @@ function hitungArusKas(fDari, fSampai){
     rows.forEach(r=>{
       if(r.kelompok!==kel) return;
       const label = r.lawanKategoriLabel;
-      if(!petaKategori[label]) petaKategori[label] = { total:0, akun:{} };
+      if(!petaKategori[label]) petaKategori[label] = { total:0, akun:{}, trx:{} };
       petaKategori[label].total += r.arah*r.nominal;
       petaKategori[label].akun[r.lawanNama] = (petaKategori[label].akun[r.lawanNama]||0) + r.arah*r.nominal;
+      // Daftar transaksi per akun lawan — dipakai PDF versi "Lengkap" (nama transaksi di bawah nama akun)
+      if(!petaKategori[label].trx[r.lawanNama]) petaKategori[label].trx[r.lawanNama] = [];
+      petaKategori[label].trx[r.lawanNama].push({ tanggal:r.tanggal, keterangan:r.keterangan||'-', nilai:r.arah*r.nominal });
     });
     rincianPerKelompok[kel] = Object.keys(petaKategori).sort((a,b)=>a.localeCompare(b)).map(label=>({
       label,
       total: petaKategori[label].total,
       // Akun dengan total bersih Rp0 di periode ini disembunyikan (tidak informatif untuk dilihat)
-      akun: Object.keys(petaKategori[label].akun).sort((a,b)=>a.localeCompare(b)).map(nama=>({ nama, nilai:petaKategori[label].akun[nama] })).filter(a=>a.nilai!==0)
+      akun: Object.keys(petaKategori[label].akun).sort((a,b)=>a.localeCompare(b)).map(nama=>({ nama, nilai:petaKategori[label].akun[nama], trx:(petaKategori[label].trx[nama]||[]).slice().sort((x,y)=> String(x.tanggal).localeCompare(String(y.tanggal))) })).filter(a=>a.nilai!==0)
     })).filter(kat=>kat.akun.length>0); // kategori yang semua akunnya Rp0 juga ikut disembunyikan
   });
   return { groups, rows, rincianPerKelompok, totalKas, KELOMPOK_URUT };
@@ -17900,13 +17965,16 @@ function arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK
    abu-abu lebih gelap untuk grand total (Kenaikan/Penurunan Kas Bersih), kategori generik ditulis
    tebal & akun lawan di bawahnya ditulis abu-abu menjorok — supaya laporan Arus Kas konsisten
    secara visual dengan Laba Rugi & Neraca. */
-function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, existingDoc){
+/* mode: 'ringkasan' (default — dipakai juga oleh PDF Laporan Lengkap gabungan) atau 'lengkap' (di bawah
+   tiap nama akun ditambah rincian nama transaksi, menjorok ke kanan). */
+function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, existingDoc, mode){
   try{
+    const lengkap = mode==='lengkap';
     const { jsPDF } = window.jspdf;
     const doc = existingDoc || new jsPDF({ orientation:'portrait', unit:'pt' });
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginLeft = 32, marginRight = 32;
-    let startY = pdfDrawHeader(doc, 'Laporan Arus Kas', periodeText, { hideDownloadedAt:true });
+    let startY = pdfDrawHeader(doc, lengkap ? 'Laporan Arus Kas (Lengkap)' : 'Laporan Arus Kas', periodeText, { hideDownloadedAt:true });
 
     const COL_HEADER_TITLE = [20,20,20], COL_HEADER_TEXT = 255;   // bar judul hitam
     const COL_GROUP_BG = [232,232,232], COL_GROUP_TEXT = [30,30,30]; // pita kelompok/subtotal abu-abu muda
@@ -17962,6 +18030,9 @@ function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_U
           row(kat.label, paren(kat.total), { indent:1, bold:true, color: COL_AKUN_TEXT, pctVal: kat.total });
           kat.akun.forEach(it=>{
             row(it.nama, paren(it.nilai), { indent:2, color: COL_SUBAKUN_TEXT, fontSize:8.2, pctVal: it.nilai });
+            if(lengkap) (it.trx||[]).forEach(t=>{
+              row(t.keterangan, paren(t.nilai), { indent:3, color:[150,150,150], fontSize:7.6, pctVal: t.nilai });
+            });
           });
         });
       }
@@ -17995,22 +18066,52 @@ function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_U
       headStyles: { cellPadding: { top:6, right:8, bottom:6, left:8 } }
     });
 
-    if(!existingDoc){ doc.save('arus-kas.pdf'); toast('File PDF diunduh'); }
+    if(!existingDoc){ doc.save(lengkap ? 'arus-kas-lengkap.pdf' : 'arus-kas.pdf'); toast('File PDF diunduh'); }
     return doc;
   }catch(err){ toast('Gagal membuat PDF: '+err.message); }
 }
 // Konfigurasi tombol Ekspor Excel/PDF untuk Laporan Arus Kas — dipasang lewat ioToolbarHtml/
 // bindIoToolbar, sama seperti pola labaRugiIoCfg/neracaExportExcelCustom.
+// Modal kecil untuk memilih jenis unduhan PDF Arus Kas: Lengkap (dengan nama transaksi) atau Ringkasan.
+function arusKasPdfPilihModal(onPick){
+  const id = 'arusKasPdfPilihModal';
+  let m = document.getElementById(id); if(m) m.remove();
+  m = document.createElement('div');
+  m.id = id;
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(30,25,20,.55);z-index:96;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML = `<div style="background:var(--paper);color:var(--ink);width:min(420px,96vw);border-radius:14px;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="font-size:16px">Unduh PDF Arus Kas</h3>
+      <button class="btn small" id="${id}Close" type="button">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <button class="btn primary btn-blue" id="${id}Lengkap" type="button" style="width:100%;justify-content:center;padding:10px 12px">⬇ Download Lengkap</button>
+        <div class="mini" style="margin-top:5px;line-height:1.5">Rincian per akun beserta nama tiap transaksi.</div>
+      </div>
+      <div>
+        <button class="btn" id="${id}Ringkasan" type="button" style="width:100%;justify-content:center;padding:10px 12px">⬇ Download Ringkasan</button>
+        <div class="mini" style="margin-top:5px;line-height:1.5">Kelompok aktivitas, kategori, dan akun saja.</div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  const close = ()=> m.remove();
+  m.addEventListener('click', e=>{ if(e.target===m) close(); });
+  document.getElementById(id+'Close').addEventListener('click', close);
+  document.getElementById(id+'Lengkap').addEventListener('click', ()=>{ close(); onPick('lengkap'); });
+  document.getElementById(id+'Ringkasan').addEventListener('click', ()=>{ close(); onPick('ringkasan'); });
+}
 function arusKasIoCfg(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT){
   const [fDari, fSampai] = arusKasDateRange().map(v=>v||'');
   const periodeText = 'Periode: '+(fDari?fmtTgl(fDari):'Awal')+' s/d '+(fSampai?fmtTgl(fSampai):'Sekarang');
   const dateRangeText = (fDari?fmtTgl(fDari):'Awal')+' - '+(fSampai?fmtTgl(fSampai):'Sekarang');
   return {
     exportExcel: ()=>{ arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, dateRangeText); return { custom:true }; },
-    exportPdf: ()=>{ arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText); return { custom:true }; }
+    exportPdf: ()=>{ arusKasPdfPilihModal(mode=> arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, undefined, mode)); return { custom:true }; }
   };
 }
-RENDERERS.aruskas = function(c){
+function renderArusKasRingkasan(c){
   const isPerBulan = arusKasFilter.mode === 'per_bulan_tahun_ini';
   // Kotak nilai ringkasan (Aktivitas Operasional/Investasi/Pendanaan/Kenaikan-Penurunan Kas
   // Bersih) digambar sebagai "field" di dalam formgrid yang sama dengan dropdown Periode — pola
@@ -18117,6 +18218,190 @@ RENDERERS.aruskas = function(c){
   const akSampaiEl = document.getElementById('akSampai');
   if(akSampaiEl) akSampaiEl.addEventListener('change', e=>{ arusKasFilter.sampai = e.target.value; setPage('aruskas',1); renderContent(); });
 };
+/* ---- Tab "Ringkasan / Bandingkan Periode" di halaman Arus Kas — pola sama seperti Laba Rugi
+   (lihat RENDERERS.labarugi & renderLabaRugiCompare): pilih tipe periode (harian/mingguan/bulanan/
+   tahunan) + jumlah periode ke belakang, lalu tampil grafik, tabel ringkasan tiap periode, dan
+   rincian per akun lawan dengan kolom Perubahan (periode pertama vs terakhir). ---- */
+let arusKasSubtab = 'ringkasan';
+let akCompareTipe = 'bulanan';
+let akCompareJumlah = 6;
+RENDERERS.aruskas = function(c){
+  c.innerHTML = `<div class="tabs2 tabs2-blue">
+    <button data-t="ringkasan" class="${arusKasSubtab==='ringkasan'?'active':''}">Ringkasan</button>
+    <button data-t="compare" class="${arusKasSubtab==='compare'?'active':''}">Bandingkan Periode</button>
+  </div><div id="akBody"></div>`;
+  c.querySelectorAll('.tabs2 button').forEach(b=> b.addEventListener('click', ()=>{ arusKasSubtab=b.dataset.t; renderContent(); }));
+  const body = document.getElementById('akBody');
+  if(arusKasSubtab==='ringkasan') renderArusKasRingkasan(body); else renderArusKasCompare(body);
+};
+// Saldo seluruh akun Kas & Bank (kategori AL) tepat SEBELUM tanggal tertentu — untuk Saldo Kas Awal/Akhir.
+function saldoKasSebelumTanggal(tgl){
+  return DB.coa.filter(a=>a.kategori==='AL' && !a.isHeader).reduce((sum,a)=> sum + saldoSebelumTanggal(a.id, tgl), 0);
+}
+/* Data "Rincian per Akun" untuk Bandingkan Periode Arus Kas — dipakai bersama oleh tampilan
+   layar dan ekspor PDF. Struktur: [{ kel, kategoris:[{label,total[],akun:[{nama,v[]}]}], totals[] }] */
+function arusKasCompareRincianData(periods, data){
+  const KEL = ['Operasional','Investasi','Pendanaan'];
+  const out = [];
+  KEL.forEach(kel=>{
+    const peta = {};
+    data.forEach((d,i)=>{
+      (d.rincianPerKelompok[kel]||[]).forEach(kat=>{
+        if(!peta[kat.label]) peta[kat.label] = { total: periods.map(()=>0), akun:{} };
+        peta[kat.label].total[i] = kat.total;
+        kat.akun.forEach(a=>{
+          if(!peta[kat.label].akun[a.nama]) peta[kat.label].akun[a.nama] = periods.map(()=>0);
+          peta[kat.label].akun[a.nama][i] = a.nilai;
+        });
+      });
+    });
+    const labels = Object.keys(peta).sort((a,b)=>a.localeCompare(b));
+    if(!labels.length) return;
+    out.push({
+      kel,
+      kategoris: labels.map(lbl=>({
+        label: lbl,
+        total: peta[lbl].total,
+        akun: Object.keys(peta[lbl].akun).sort((a,b)=>a.localeCompare(b)).map(nama=>({ nama, v: peta[lbl].akun[nama] }))
+      })),
+      totals: data.map(d=>d.groups[kel])
+    });
+  });
+  return out;
+}
+/* Unduh PDF "Rincian per Akun" (Bandingkan Periode Arus Kas). Landscape supaya kolom periode muat;
+   kertas A3 kalau periode > 10. Gaya tabel mengikuti PDF Laporan Arus Kas biasa. */
+function arusKasCompareExportPdf(periods, rincian){
+  try{
+    if(!rincian.length) return toast('Belum ada data rincian untuk diunduh');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape', unit:'pt', format: periods.length>10 ? 'a3' : 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const marginLeft = 32, marginRight = 32;
+    const last = periods.length-1;
+    const periodeText = 'Periode: '+periods[0].label+' s/d '+periods[last].label;
+    const startY = pdfDrawHeader(doc, 'Laporan Arus Kas — Rincian per Akun', periodeText, { hideDownloadedAt:true });
+
+    const COL_HEAD = [20,20,20];
+    const COL_GROUP_BG = [232,232,232], COL_TOTAL_BG = [210,210,210];
+    const COL_TEXT = [25,25,25], COL_SUB = [110,110,110];
+    const fs = periods.length>8 ? 6.8 : 8.4;
+    const paren = n=> n<0 ? '('+fmtRp(Math.abs(n)).replace('Rp','').trim()+')' : fmtRp(n).replace('Rp','').trim();
+    const chg = n=> (n>0?'+':'')+paren(n);
+
+    const body = [];
+    const addRow = (label, vals, opts)=>{
+      opts = opts||{};
+      const base = { fontSize: opts.fontSize||fs, valign:'middle', fontStyle: opts.bold?'bold':'normal',
+        textColor: opts.color||COL_TEXT, fillColor: opts.fill||null };
+      const cells = [{ content: label, styles: Object.assign({}, base, { cellPadding:{ top:3, right:6, bottom:3, left: 6 + (opts.indent||0)*12 } }) }];
+      vals.forEach(v=> cells.push({ content: v, styles: Object.assign({}, base, { halign:'right', cellPadding:{ top:3, right:6, bottom:3, left:4 } }) }));
+      body.push(cells);
+    };
+    rincian.forEach(g=>{
+      addRow('Aktivitas '+g.kel, periods.map(()=>'').concat(['']), { bold:true, fontSize:fs+1.6, color:[10,10,10] });
+      g.kategoris.forEach(k=>{
+        addRow(k.label, k.total.map(paren).concat([chg(k.total[last]-k.total[0])]), { indent:1, bold:true });
+        k.akun.forEach(a=> addRow(a.nama, a.v.map(paren).concat([chg(a.v[last]-a.v[0])]), { indent:2, color:COL_SUB, fontSize:fs-0.4 }));
+      });
+      addRow('Kas Bersih '+g.kel, g.totals.map(paren).concat([chg(g.totals[last]-g.totals[0])]), { bold:true, fill:COL_GROUP_BG });
+    });
+    const grand = periods.map((_,i)=> rincian.reduce((s,g)=> s+g.totals[i], 0));
+    addRow('Kenaikan (Penurunan) Kas Bersih', grand.map(paren).concat([chg(grand[last]-grand[0])]), { bold:true, fill:COL_TOTAL_BG });
+
+    const nCols = periods.length+2;
+    const firstW = 190, chgW = 70;
+    const perW = Math.max(46, (pageWidth - marginLeft - marginRight - firstW - chgW) / periods.length);
+    const columnStyles = { 0:{ cellWidth:firstW } };
+    for(let i=1;i<=periods.length;i++) columnStyles[i] = { cellWidth: perW };
+    columnStyles[nCols-1] = { cellWidth: chgW };
+    const hs = { fillColor:COL_HEAD, textColor:255, fontStyle:'bold', fontSize:fs, cellPadding:{ top:5, right:6, bottom:5, left:6 } };
+    doc.autoTable({
+      startY, theme:'plain', styles:{ font:'helvetica', lineWidth:0 }, columnStyles,
+      margin:{ left:marginLeft, right:marginRight },
+      head:[[ { content:'Akun', styles:hs } ].concat(periods.map(p=>({ content:p.label, styles:Object.assign({}, hs, { halign:'right' }) })))
+        .concat([{ content:'Perubahan', styles:Object.assign({}, hs, { halign:'right' }) }])],
+      body
+    });
+    doc.save('arus-kas-rincian-per-akun.pdf');
+    toast('File PDF diunduh');
+  }catch(err){ toast('Gagal membuat PDF: '+err.message); }
+}
+function renderArusKasCompare(c){
+  const periods = generatePeriods(akCompareTipe, akCompareJumlah);
+  const KEL = ['Operasional','Investasi','Pendanaan'];
+  const data = periods.map(p=>{
+    const h = hitungArusKas(p.dari, p.sampai);
+    const masuk = h.rows.filter(r=>r.arah>0).reduce((s,r)=>s+r.nominal,0);
+    const keluar = h.rows.filter(r=>r.arah<0).reduce((s,r)=>s+r.nominal,0);
+    return { ...h, masuk, keluar, saldoAwal: saldoKasSebelumTanggal(p.dari), saldoAkhir: saldoKasSebelumTanggal(tambahHariTanggal(p.sampai,1)) };
+  });
+  const warna = v=> v>=0 ? 'var(--debit)' : 'var(--kredit)';
+  const numTd = (v, bold)=> `<td class="num" style="color:${warna(v)}${bold?';font-weight:700':''}">${fmtRp(v)}</td>`;
+  const perubahanTd = v=> `<td class="num" style="font-weight:700;color:${warna(v)}">${v>=0?'+':''}${fmtRp(v)}</td>`;
+
+  // ---- Rincian per akun lawan: Kelompok > Kategori > Akun, nilai tiap periode + Perubahan ----
+  const rincian = arusKasCompareRincianData(periods, data);
+  const last = periods.length-1;
+  let rincianHtml = '';
+  rincian.forEach(g=>{
+    const body = g.kategoris.map(k=>{
+      const akunRows = k.akun.map(a=>`<tr><td style="padding-left:28px">${escHtml(a.nama)}</td>${a.v.map(x=>numTd(x)).join('')}${perubahanTd(a.v[last]-a.v[0])}</tr>`).join('');
+      return `<tr style="font-weight:600"><td style="padding-left:12px">${escHtml(k.label)}</td>${k.total.map(x=>numTd(x,true)).join('')}${perubahanTd(k.total[last]-k.total[0])}</tr>${akunRows}`;
+    }).join('');
+    rincianHtml += `<details class="card" style="margin-bottom:10px" open>
+      <summary style="cursor:pointer;font-family:Poppins;font-weight:700;color:#1a3c6e;background:#DBEAFE;display:inline-block;padding:4px 10px;border-radius:7px">Aktivitas ${g.kel}</summary>
+      <div class="tablewrap" style="margin-top:10px"><table class="sheet"><thead><tr><th>Akun</th>${periods.map(p=>`<th class="num">${p.label}</th>`).join('')}<th class="num">Perubahan</th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr style="font-weight:700;border-top:2px solid var(--ink)"><td>Kas Bersih ${g.kel}</td>${g.totals.map(x=>numTd(x,true)).join('')}${perubahanTd(g.totals[last]-g.totals[0])}</tr></tfoot></table></div>
+    </details>`;
+  });
+  if(!rincianHtml) rincianHtml = '<div class="card"><div class="empty">Belum ada pergerakan kas untuk periode-periode ini</div></div>';
+
+  const bersih = data.map(d=>d.totalKas);
+  c.innerHTML = `<div class="card" style="margin-bottom:14px">
+    <div class="formgrid">
+      <div class="field"><label>Tipe Periode</label><select id="akCmpTipe">
+        <option value="harian" ${akCompareTipe==='harian'?'selected':''}>Harian</option>
+        <option value="mingguan" ${akCompareTipe==='mingguan'?'selected':''}>Mingguan</option>
+        <option value="bulanan" ${akCompareTipe==='bulanan'?'selected':''}>Bulanan</option>
+        <option value="tahunan" ${akCompareTipe==='tahunan'?'selected':''}>Tahunan</option>
+      </select></div>
+      <div class="field"><label>Jumlah periode ke belakang</label><input type="number" id="akCmpJumlah" min="2" max="24" value="${akCompareJumlah}"></div>
+      <div class="field"><label>&nbsp;</label><button class="btn primary btn-blue" id="btnAkCmpTampilkan" style="width:100%">Tampilkan</button></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    ${svgBarChart(periods.map(p=>p.label), [
+      {name:'Kas Masuk', color:'var(--debit)', values:data.map(d=>d.masuk)},
+      {name:'Kas Keluar', color:'var(--kredit)', values:data.map(d=>d.keluar)}
+    ])}
+    <div style="display:flex;gap:16px;margin-top:6px;font-size:11.5px">
+      <span><span style="display:inline-block;width:9px;height:9px;background:var(--debit);border-radius:2px;margin-right:4px"></span>Kas Masuk</span>
+      <span><span style="display:inline-block;width:9px;height:9px;background:var(--kredit);border-radius:2px;margin-right:4px"></span>Kas Keluar</span>
+    </div>
+  </div>
+
+  <div class="card">
+  <div class="tablewrap"><table class="sheet"><thead><tr><th>Komponen</th>${periods.map(p=>`<th class="num">${p.label}</th>`).join('')}<th class="num">Perubahan</th></tr></thead><tbody>
+    ${KEL.map(kel=>{ const v = data.map(d=>d.groups[kel]); return `<tr><td>Aktivitas ${kel}</td>${v.map(x=>numTd(x)).join('')}${perubahanTd(v[last]-v[0])}</tr>`; }).join('')}
+    <tr style="border-top:2px solid var(--ink);font-weight:700"><td>Kenaikan (Penurunan) Kas Bersih</td>${bersih.map(x=>numTd(x,true)).join('')}${perubahanTd(bersih[last]-bersih[0])}</tr>
+    <tr><td>Saldo Kas Awal</td>${data.map(d=>`<td class="num">${fmtRp(d.saldoAwal)}</td>`).join('')}<td></td></tr>
+    <tr style="font-weight:700"><td>Saldo Kas Akhir</td>${data.map(d=>`<td class="num">${fmtRp(d.saldoAkhir)}</td>`).join('')}${perubahanTd(data[last].saldoAkhir-data[0].saldoAkhir)}</tr>
+  </tbody></table></div>
+  <div class="mini" style="margin-top:8px">Kolom Perubahan = periode terakhir dikurangi periode pertama yang ditampilkan.</div>
+  </div>
+
+  <div class="section-title" style="margin-top:14px"><h3>Rincian per Akun</h3><div style="display:flex;gap:6px"><button class="btn small" id="akCmpBtnPdf" type="button">⬇ PDF</button></div></div>
+  ${rincianHtml}`;
+  document.getElementById('akCmpBtnPdf').addEventListener('click', ()=> arusKasCompareExportPdf(periods, rincian));
+  document.getElementById('btnAkCmpTampilkan').addEventListener('click', ()=>{
+    akCompareTipe = document.getElementById('akCmpTipe').value;
+    akCompareJumlah = Math.max(2, Math.min(24, Number(document.getElementById('akCmpJumlah').value)||6));
+    renderArusKasCompare(c);
+  });
+}
 // Daftar baris "Rincian Pergerakan Kas" (sudah diurutkan terbaru dulu) yang sedang ditampilkan —
 // disimpan supaya renderArusKasTable() bisa dipanggil ulang saat pindah halaman tanpa menghitung
 // ulang seluruh pergerakan kas dari DB.jurnal setiap kali.
@@ -22473,7 +22758,7 @@ async function exportLaporanLengkapPdf(){
       doc.addPage();
       const startPage = doc.internal.getNumberOfPages();
       const { rincianPerKelompok, groups, totalKas, KELOMPOK_URUT } = hitungArusKas(dari, sampai);
-      arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, doc);
+      arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, doc, 'ringkasan');
       sections.push({ label:'Laporan Arus Kas', sub:periodeText, startPage });
     }
     if(f.sections.perubahanmodal){
