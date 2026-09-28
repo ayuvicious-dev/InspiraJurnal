@@ -4290,42 +4290,74 @@ function isLowStock(item){
   if(min>0) return (item.stok||0) <= min;
   return !!item.hampirHabis;
 }
+/* Tanggal terakhir bulan (format YYYY-MM-DD) dari string bulan 'YYYY-MM' — dipakai untuk membebankan
+   selisih stock opname ke Laba Rugi pada AKHIR bulan periode yang dipilih (mis. '2026-08' -> '2026-08-31').
+   Dihitung manual (bukan toISOString) supaya tidak bergeser sehari karena zona waktu. */
+function akhirBulanStr(ym){
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, m, 0).getDate();
+  return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}
+/* Opsi periode bulanan untuk stock opname: bulan berjalan + 12 bulan ke belakang. */
+function opsiPeriodeStokOpnameHtml(){
+  const now = new Date();
+  let html = '<option value="">Hari ini (default)</option>';
+  for(let i=0;i<=12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const ym = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    html += `<option value="${ym}">${fmtBulanLabelID(ym)} — dibebankan ${fmtTgl(akhirBulanStr(ym))}</option>`;
+  }
+  return html;
+}
 function prosesPenyesuaianStok(item, tipeInventaris, arah){
   const namaLabel = item.nama;
-  const qtyStr = prompt('Jumlah stok yang '+(arah==='plus'?'ditambahkan':'dikurangi')+' untuk "'+namaLabel+'":', '');
-  if(qtyStr===null) return;
-  const qty = Number(qtyStr);
-  if(!qty || qty<=0) return toast('Jumlah tidak valid');
-  if(arah==='minus' && qty>(item.stok||0) && !confirm('Jumlah pengurangan lebih besar dari stok saat ini ('+fmtNum(item.stok||0)+'). Lanjutkan? Stok akan menjadi negatif.')) return;
   const hargaDefault = item.hargaBeliPerSatuan||0;
-  const hargaStr = prompt('Nilai per satuan (Rp) untuk jurnal penyesuaian (kosongkan = pakai harga rata-rata saat ini):', hargaDefault||0);
-  if(hargaStr===null) return;
-  const harga = hargaStr===''? hargaDefault : (Number(hargaStr)||0);
-  const ket = prompt('Keterangan penyesuaian (opsional, mis. "stok opname"):','') || '';
-  const nominal = Math.round(qty*harga);
+  const m = openFormModal('Stock Opname — '+escHtml(namaLabel)+' ('+(arah==='plus'?'tambah':'kurangi')+' stok)', `
+    <div class="formgrid">
+      <div class="field"><label>Jumlah stok yang ${arah==='plus'?'ditambahkan':'dikurangi'}</label><input type="number" id="spQty" min="0" step="any" placeholder="mis. 2"></div>
+      <div class="field"><label>Nilai per satuan (Rp)</label><input type="number" id="spHarga" min="0" step="any" value="${hargaDefault||0}"><div class="mini">Kosongkan = pakai harga rata-rata saat ini</div></div>
+      <div class="field" style="grid-column:span 2"><label>Keterangan (opsional)</label><input type="text" id="spKet" placeholder='mis. "stok opname"'></div>
+      <div class="field" style="grid-column:span 2"><label>Periode Laba Rugi</label><select id="spPeriode">${opsiPeriodeStokOpnameHtml()}</select>
+        <div class="mini">Selisih dibukukan di jurnal pada <b>tanggal akhir bulan</b> yang dipilih, jadi masuk ke Laba Rugi bulan tersebut. Stok tetap langsung berubah sekarang.</div></div>
+    </div>
+    <button class="btn primary btn-blue" id="spSave" style="margin-top:10px;width:100%">Simpan Penyesuaian</button>
+  `, 'stokOpnameModal');
+  m.querySelector('#spSave').addEventListener('click', ()=>{
+    const qty = Number(m.querySelector('#spQty').value);
+    if(!qty || qty<=0) return toast('Jumlah tidak valid');
+    if(arah==='minus' && qty>(item.stok||0) && !confirm('Jumlah pengurangan lebih besar dari stok saat ini ('+fmtNum(item.stok||0)+'). Lanjutkan? Stok akan menjadi negatif.')) return;
+    const hargaRaw = m.querySelector('#spHarga').value;
+    const harga = hargaRaw==='' ? hargaDefault : (Number(hargaRaw)||0);
+    const ket = m.querySelector('#spKet').value.trim();
+    const periode = m.querySelector('#spPeriode').value; // '' = hari ini, atau 'YYYY-MM'
+    const tglJurnal = periode ? akhirBulanStr(periode) : todayStr();
+    const nominal = Math.round(qty*harga);
 
-  if(arah==='plus'){ item.stok = (item.stok||0) + qty; } else { item.stok = (item.stok||0) - qty; }
+    if(arah==='plus'){ item.stok = (item.stok||0) + qty; } else { item.stok = (item.stok||0) - qty; }
 
-  const adjObj = { id:uid(), tanggal:todayStr(), tipeInventaris, refId:item.id, arah, qty, harga, nominal, keterangan:ket };
-  DB.penyesuaianStok.push(adjObj);
+    const adjObj = { id:uid(), tanggal:todayStr(), tipeInventaris, refId:item.id, arah, qty, harga, nominal, keterangan:ket, periode: periode||'', tanggalJurnal: tglJurnal };
+    DB.penyesuaianStok.push(adjObj);
 
-  if(nominal>0){
-    const kep = item.kepemilikan||'Pribadi';
-    const psAkun = akunPersediaanUntuk(kep, tipeInventaris, item);
-    if(psAkun){
-      const blAkunDefault = DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep && a.nama==='Beban Lain-lain') || DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep);
-      const blAkun = akunBebanUntukItem(item) || blAkunDefault;
-      if(arah==='plus'){
-        // Stok bertambah: debit Persediaan, kredit akun Beban yang sama dengan yang dipakai saat stok
-        // berkurang — jadi otomatis MENGURANGI saldo beban itu (bukan mencatatnya sebagai pendapatan).
-        if(blAkun) postJurnal({ tanggal:todayStr(), keterangan:'Penyesuaian stok (+) '+namaLabel+(ket?' — '+ket:''), debitId:psAkun.id, kreditId:blAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
-      } else {
-        if(blAkun) postJurnal({ tanggal:todayStr(), keterangan:'Penyesuaian stok (-) '+namaLabel+(ket?' — '+ket:''), debitId:blAkun.id, kreditId:psAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
+    if(nominal>0){
+      const kep = item.kepemilikan||'Pribadi';
+      const psAkun = akunPersediaanUntuk(kep, tipeInventaris, item);
+      if(psAkun){
+        const blAkunDefault = DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep && a.nama==='Beban Lain-lain') || DB.coa.find(a=>a.kategori==='BL' && a.kepemilikan===kep);
+        const blAkun = akunBebanUntukItem(item) || blAkunDefault;
+        if(arah==='plus'){
+          // Stok bertambah: debit Persediaan, kredit akun Beban yang sama dengan yang dipakai saat stok
+          // berkurang — jadi otomatis MENGURANGI saldo beban itu (bukan mencatatnya sebagai pendapatan).
+          if(blAkun) postJurnal({ tanggal:tglJurnal, keterangan:'Penyesuaian stok (+) '+namaLabel+(ket?' — '+ket:''), debitId:psAkun.id, kreditId:blAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
+        } else {
+          if(blAkun) postJurnal({ tanggal:tglJurnal, keterangan:'Penyesuaian stok (-) '+namaLabel+(ket?' — '+ket:''), debitId:blAkun.id, kreditId:psAkun.id, nominal, sumber:'Penyesuaian Stok', ref:'stokadj-'+adjObj.id });
+        }
       }
     }
-  }
-  save(); renderContent();
-  toast(nominal>0 ? 'Stok & jurnal penyesuaian tersimpan' : 'Stok diperbarui (tanpa jurnal — nilai per satuan Rp0)');
+    m.remove();
+    save(); renderContent();
+    toast(nominal>0 ? 'Stok & jurnal penyesuaian tersimpan'+(periode?' ('+fmtBulanLabelID(periode)+')':'') : 'Stok diperbarui (tanpa jurnal — nilai per satuan Rp0)');
+  });
+  setTimeout(()=> m.querySelector('#spQty')?.focus(), 30);
 }
 
 /* ---- Auto Nol Stok — dipakai lewat checkbox "Stok Habis" di Persediaan Bahan & Persediaan Barang ----
