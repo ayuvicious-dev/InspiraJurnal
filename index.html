@@ -10085,7 +10085,7 @@ function akunTransaksiHtml(akunId, periode){
     const isDebit = j.debitId===akunId;
     const efek = normalDebit ? (isDebit? j.nominal : -j.nominal) : (isDebit? -j.nominal : j.nominal);
     saldoBerjalan += efek;
-    return `<tr data-jid="${j.id}"><td><a href="#" class="goto-jurnal-link" data-jid="${j.id}" title="Buka transaksi ini di Jurnal Umum" style="color:var(--accent,#3b82f6);font-weight:600;text-decoration:underline;cursor:pointer">${j.no}</a></td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td><span class="tag ${isDebit?'debit':'kredit'}">${isDebit?'Debit':'Kredit'}</span></td><td class="num">${fmtRp(j.nominal)}</td><td class="num">${fmtRp(saldoBerjalan)}</td><td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null,iconMode:true})}</td></tr>`;
+    return `<tr data-jid="${j.id}"><td>${kodeTransaksiLinkHtml(j)}</td><td>${fmtTgl(j.tanggal)}</td><td class="wrap-cell">${j.keterangan||'-'}</td><td><span class="tag ${isDebit?'debit':'kredit'}">${isDebit?'Debit':'Kredit'}</span></td><td class="num">${fmtRp(j.nominal)}</td><td class="num">${fmtRp(saldoBerjalan)}</td><td>${aksiBtnsHtml('jurnal','jid',j.id,{dupClass:null,iconMode:true})}</td></tr>`;
   }).join('') : `<tr><td colspan="7" class="empty">Tidak ada transaksi di ${isHari?'tanggal':'bulan'} ${labelPeriode}</td></tr>`}
   </tbody></table></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
@@ -17708,7 +17708,7 @@ RENDERERS.perubahanmodal = function(c){
 // lain (mis. bukuBesarFilter/lrFilter, lihat dateRangeForMode). Mode 'semua' = tanpa batas
 // tanggal (default lama). Mode 'per_bulan_tahun_ini' beda dari mode lain: bukan 1 rentang
 // tanggal, tapi dipecah per bulan (Januari s.d. bulan berjalan tahun ini) untuk dibandingkan.
-let arusKasFilter = { mode:'semua', dari:'', sampai:'' };
+let arusKasFilter = { mode:'bulan_ini', dari:'', sampai:'' }; // default: bulan ini (sebelumnya 'semua')
 const ARUSKAS_MODE_OPTS = [
   ['semua','Semua'],
   ['hari_ini','Hari Ini'],
@@ -18056,7 +18056,7 @@ RENDERERS.aruskas = function(c){
         const kategoris = rincianPerKelompok[kel];
         const rowsHtml = kategoris.length
           ? kategoris.map(kat=>{
-              const akunRows = kat.akun.map(it=>`<tr><td style="padding-left:38px">${escHtml(it.nama)}</td><td class="num" style="color:${it.nilai>=0?'var(--debit)':'var(--kredit)'}">${fmtRp(it.nilai)}</td></tr>`).join('');
+              const akunRows = kat.akun.map(it=>`<tr class="ak-akun-clickable" data-kel="${escHtml(kel)}" data-kat="${escHtml(kat.label)}" data-akun="${escHtml(it.nama)}" style="cursor:pointer" title="Klik untuk lihat rincian"><td style="padding-left:38px">${escHtml(it.nama)}</td><td class="num" style="color:${it.nilai>=0?'var(--debit)':'var(--kredit)'}">${fmtRp(it.nilai)}</td></tr>`).join('');
               return `<tr><td style="padding-left:22px;font-weight:600">${escHtml(kat.label)}</td><td class="num" style="font-weight:600;color:${kat.total>=0?'var(--debit)':'var(--kredit)'}">${fmtRp(kat.total)}</td></tr>${akunRows}`;
             }).join('')
           : `<tr><td style="padding-left:22px" class="mini">Tidak ada aktivitas</td><td class="num"></td></tr>`;
@@ -18073,6 +18073,11 @@ RENDERERS.aruskas = function(c){
     bindIoToolbar('aruskas', akCfg);
     arusKasRowsCache = [...rows].reverse();
     renderArusKasTable();
+    // Klik baris akun di Laporan Arus Kas (Metode Langsung) -> popup rincian transaksi
+    // (tanggal, keterangan, nominal) yang membentuk angka akun tersebut.
+    c.querySelectorAll('.ak-akun-clickable').forEach(el=> el.addEventListener('click', ()=>{
+      openArusKasAkunRincian(el.dataset.kel, el.dataset.kat, el.dataset.akun);
+    }));
   }
   document.getElementById('akMode').addEventListener('change', e=>{ arusKasFilter.mode = e.target.value; setPage('aruskas',1); renderContent(); });
   const akDariEl = document.getElementById('akDari');
@@ -18084,6 +18089,55 @@ RENDERERS.aruskas = function(c){
 // disimpan supaya renderArusKasTable() bisa dipanggil ulang saat pindah halaman tanpa menghitung
 // ulang seluruh pergerakan kas dari DB.jurnal setiap kali.
 let arusKasRowsCache = [];
+// Kode transaksi (No jurnal) untuk 1 baris di popup rincian (Arus Kas, serta rincian akun di Neraca & Laba Rugi), dijadikan link yang membuka
+// transaksi ASAL-nya: kalau jurnal ini dibuat dari fitur Biaya / Aset Tetap / Pembelian dan
+// transaksi sumbernya masih ada, langsung ke fitur itu (pakai pola ref yang sama dengan
+// sumberCellHtml di Jurnal Umum, dan handler goto-*-link di bindJurnalRowActions). Selain itu
+// (Jurnal Umum manual, Terima/Kirim/Transfer Uang, dst — atau transaksi sumbernya sudah dihapus)
+// langsung ke baris jurnalnya di Jurnal Umum.
+function kodeTransaksiLinkHtml(r){
+  const st = 'color:var(--accent,#3b82f6);font-weight:600;text-decoration:underline;cursor:pointer';
+  const kode = escHtml(String(r.no!=null ? r.no : '-'));
+  const bid = biayaIdFromRef(r.ref);
+  if(bid && DB.biaya.some(b=>b.id===bid)){
+    return `<a href="#" class="goto-biaya-link" data-bid="${bid}" title="Buka transaksi ini di fitur Biaya" style="${st}">${kode}</a>`;
+  }
+  const aid = asetIdFromRef(r.ref);
+  if(aid && DB.aset.some(a=>a.id===aid)){
+    return `<a href="#" class="goto-aset-link" data-aid="${aid}" title="Buka transaksi ini di fitur Aset Tetap" style="${st}">${kode}</a>`;
+  }
+  const pid = pembelianIdFromRef(r.ref);
+  if(pid && DB.pembelian.some(p=>p.id===pid)){
+    return `<a href="#" class="goto-pembelian-link" data-pid="${pid}" title="Buka transaksi ini di fitur Pembelian" style="${st}">${kode}</a>`;
+  }
+  return `<a href="#" class="goto-jurnal-link" data-jid="${r.id}" title="Buka transaksi ini di Jurnal Umum" style="${st}">${kode}</a>`;
+}
+// Popup rincian transaksi untuk 1 baris akun di Laporan Arus Kas (Metode Langsung). Sengaja TIDAK
+// memakai bindAkunTrxDrawer (buku besar akun) karena itu memuat semua jurnal akun tsb, termasuk yang
+// tidak menyentuh kas (mis. amortisasi Biaya Dibayar Di Muka), sehingga totalnya tidak akan sama
+// dengan angka di laporan. Di sini hanya pergerakan kas milik kelompok + kategori + akun lawan yang
+// diklik, dari periode filter yang sedang aktif (arusKasRowsCache), jadi total popup = angka baris.
+function openArusKasAkunRincian(kel, katLabel, akunNama){
+  const rows = arusKasRowsCache
+    .filter(r=> r.kelompok===kel && r.lawanKategoriLabel===katLabel && r.lawanNama===akunNama)
+    .slice()
+    .sort((a,b)=> String(b.tanggal||'').localeCompare(String(a.tanggal||''))); // terbaru dulu (sort stabil)
+  const total = rows.reduce((sum,r)=> sum + r.arah*r.nominal, 0);
+  const [fDari, fSampai] = arusKasDateRange().map(v=>v||'');
+  const periodeText = (fDari?fmtTgl(fDari):'Awal')+' s/d '+(fSampai?fmtTgl(fSampai):'Sekarang');
+  const warna = v=> v>=0 ? 'var(--debit)' : 'var(--kredit)';
+  const bodyHtml = `<div class="mini" style="margin:-6px 0 10px;line-height:1.6">Aktivitas ${escHtml(kel)} › ${escHtml(katLabel)}<br>Periode: ${periodeText}<br>Klik kode untuk membuka transaksi di fitur asalnya.</div>
+    <div class="tablewrap"><table class="sheet">
+      <thead><tr><th>Tanggal</th><th>Kode</th><th>Keterangan</th><th class="num">Nominal</th></tr></thead>
+      <tbody>
+        ${rows.length ? rows.map(r=>`<tr><td>${fmtTgl(r.tanggal)}</td><td>${kodeTransaksiLinkHtml(r)}</td><td class="wrap-cell">${escHtml(r.keterangan||'-')}</td><td class="num" style="color:${warna(r.arah)}">${fmtRp(r.arah*r.nominal)}</td></tr>`).join('') : '<tr><td colspan="4" class="empty">Tidak ada transaksi pada periode ini</td></tr>'}
+      </tbody>
+      <tfoot><tr style="font-weight:700;border-top:2px solid var(--ink)"><td colspan="3">Total (${rows.length} transaksi)</td><td class="num" style="color:${warna(total)}">${fmtRp(total)}</td></tr></tfoot>
+    </table></div>`;
+  const drawer = openDetailDrawer(escHtml(akunNama)+' — rincian transaksi', bodyHtml, {centered:true});
+  // Ikat klik kode transaksi (goto-jurnal/biaya/aset/pembelian-link) -> pindah ke fitur asalnya.
+  bindJurnalRowActions(drawer);
+}
 // Render tabel "Rincian Pergerakan Kas" dibatasi 5 baris per halaman (lihat paginateRows), dengan
 // navigasi Sebelumnya/Selanjutnya + gesture geser (swipe) — pola sama seperti tabel Jurnal/Buku
 // Besar/dll (lihat paginateRows/paginationBarHtml/bindPaginationUI).
