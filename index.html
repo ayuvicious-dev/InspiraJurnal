@@ -17901,14 +17901,19 @@ function hitungArusKas(fDari, fSampai){
       akun: Object.keys(petaKategori[label].akun).sort((a,b)=>a.localeCompare(b)).map(nama=>({ nama, nilai:petaKategori[label].akun[nama], trx:(petaKategori[label].trx[nama]||[]).slice().sort((x,y)=> String(x.tanggal).localeCompare(String(y.tanggal))) })).filter(a=>a.nilai!==0)
     })).filter(kat=>kat.akun.length>0); // kategori yang semua akunnya Rp0 juga ikut disembunyikan
   });
-  return { groups, rows, rincianPerKelompok, totalKas, KELOMPOK_URUT };
+  // Saldo kas awal = saldo semua akun kas SEBELUM tanggal awal periode (tanpa tanggal awal = 0, karena
+  // semua transaksi ikut dihitung); saldo kas akhir = saldo s/d tanggal akhir periode (tanpa tanggal
+  // akhir = seluruh transaksi). Selalu sama dengan saldoAwal + totalKas.
+  const saldoAwal = fDari ? saldoKasSebelumTanggal(fDari) : 0;
+  const saldoAkhir = fSampai ? saldoKasSebelumTanggal(tambahHariTanggal(fSampai,1)) : saldoKasSebelumTanggal('9999-12-31');
+  return { groups, rows, rincianPerKelompok, totalKas, KELOMPOK_URUT, saldoAwal, saldoAkhir };
 }
 // Ekspor Excel Laporan Arus Kas — layout dibuat meniru format labaRugiExportExcelCustom: baris kop
 // (nama usaha, judul laporan, rentang tanggal, "(dalam Rp)") digabung selebar tabel, lalu tiap
 // kelompok aktivitas (Operasional/Investasi/Pendanaan) jadi baris label sendiri diikuti rincian
 // kategori generik (mis. "Penerimaan dari Pelanggan") & akun lawannya menjorok, lalu baris
 // "Kas Bersih dari Aktivitas <kelompok>" dan diakhiri baris "Kenaikan (Penurunan) Kas Bersih".
-function arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, dateRangeText){
+function arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, dateRangeText, saldo){
   try{
     const namaUsaha = (DB.profil && DB.profil.namaUsaha) || 'Inspira Ledger';
     const aoa = [];
@@ -17944,6 +17949,7 @@ function arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK
       totalRow('Kas Bersih dari Aktivitas '+kel, groups[kel]);
     });
     totalRow('Kenaikan (Penurunan) Kas Bersih', totalKas);
+    if(saldo){ totalRow('Saldo Kas Awal', saldo.awal); totalRow('Saldo Kas Akhir', saldo.akhir); }
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws['!merges'] = merges;
@@ -17967,7 +17973,7 @@ function arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK
    secara visual dengan Laba Rugi & Neraca. */
 /* mode: 'ringkasan' (default — dipakai juga oleh PDF Laporan Lengkap gabungan) atau 'lengkap' (di bawah
    tiap nama akun ditambah rincian nama transaksi, menjorok ke kanan). */
-function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, existingDoc, mode){
+function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, existingDoc, mode, saldo){
   try{
     const lengkap = mode==='lengkap';
     const { jsPDF } = window.jspdf;
@@ -18039,6 +18045,10 @@ function arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_U
       groupRow('Kas Bersih dari Aktivitas '+kel, groups[kel]);
     });
     totalRow('Kenaikan (Penurunan) Kas Bersih', totalKas);
+    if(saldo){
+      groupRow('Saldo Kas Awal', saldo.awal, null);
+      totalRow('Saldo Kas Akhir', saldo.akhir, null);
+    }
 
     // Kolom % — persentase tiap baris terhadap total Kenaikan (Penurunan) Kas Bersih, mengikuti
     // gaya "% Pendapatan" di labaRugiExportPdfCustom.
@@ -18102,13 +18112,13 @@ function arusKasPdfPilihModal(onPick){
   document.getElementById(id+'Lengkap').addEventListener('click', ()=>{ close(); onPick('lengkap'); });
   document.getElementById(id+'Ringkasan').addEventListener('click', ()=>{ close(); onPick('ringkasan'); });
 }
-function arusKasIoCfg(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT){
+function arusKasIoCfg(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, saldo){
   const [fDari, fSampai] = arusKasDateRange().map(v=>v||'');
   const periodeText = 'Periode: '+(fDari?fmtTgl(fDari):'Awal')+' s/d '+(fSampai?fmtTgl(fSampai):'Sekarang');
   const dateRangeText = (fDari?fmtTgl(fDari):'Awal')+' - '+(fSampai?fmtTgl(fSampai):'Sekarang');
   return {
-    exportExcel: ()=>{ arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, dateRangeText); return { custom:true }; },
-    exportPdf: ()=>{ arusKasPdfPilihModal(mode=> arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, undefined, mode)); return { custom:true }; }
+    exportExcel: ()=>{ arusKasExportExcelCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, dateRangeText, saldo); return { custom:true }; },
+    exportPdf: ()=>{ arusKasPdfPilihModal(mode=> arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, undefined, mode, saldo)); return { custom:true }; }
   };
 }
 function renderArusKasRingkasan(c){
@@ -18168,8 +18178,8 @@ function renderArusKasRingkasan(c){
     c.innerHTML = html;
   } else {
     const [fDari, fSampai] = arusKasDateRange().map(v=>v||'');
-    const { groups, rows, rincianPerKelompok, totalKas, KELOMPOK_URUT } = hitungArusKas(fDari, fSampai);
-    const akCfg = arusKasIoCfg(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT);
+    const { groups, rows, rincianPerKelompok, totalKas, KELOMPOK_URUT, saldoAwal, saldoAkhir } = hitungArusKas(fDari, fSampai);
+    const akCfg = arusKasIoCfg(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, { awal:saldoAwal, akhir:saldoAkhir });
     let html = `<div class="card" style="margin-bottom:14px">
     <div class="section-title"><h3>Filter Periode</h3>${ioToolbarHtml('aruskas', akCfg)}</div>
     <div class="formgrid">
@@ -18196,6 +18206,8 @@ function renderArusKasRingkasan(c){
         return `<tr><td colspan="2" style="font-weight:700;color:var(--accent,#3b82f6);padding-top:10px">Aktivitas ${kel}</td></tr>${rowsHtml}<tr style="font-weight:700;border-top:1px solid var(--line)"><td>Kas Bersih dari Aktivitas ${kel}</td><td class="num">${fmtRp(groups[kel])}</td></tr>`;
       }).join('')}
       <tr style="font-weight:700;border-top:2px solid var(--ink)"><td style="padding-top:10px">Kenaikan (Penurunan) Kas Bersih</td><td class="num" style="padding-top:10px">${fmtRp(totalKas)}</td></tr>
+      <tr><td>Saldo Kas Awal</td><td class="num">${fmtRp(saldoAwal)}</td></tr>
+      <tr style="font-weight:700"><td>Saldo Kas Akhir</td><td class="num">${fmtRp(saldoAkhir)}</td></tr>
     </tbody></table></div>
   </div>
   <div class="card" style="margin-top:14px">
@@ -22757,8 +22769,8 @@ async function exportLaporanLengkapPdf(){
       laporanLengkapDrawSectionDivider(doc, 'Arus Kas', periodeText);
       doc.addPage();
       const startPage = doc.internal.getNumberOfPages();
-      const { rincianPerKelompok, groups, totalKas, KELOMPOK_URUT } = hitungArusKas(dari, sampai);
-      arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, doc, 'ringkasan');
+      const { rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, saldoAwal, saldoAkhir } = hitungArusKas(dari, sampai);
+      arusKasExportPdfCustom(rincianPerKelompok, groups, totalKas, KELOMPOK_URUT, periodeText, doc, 'ringkasan', { awal:saldoAwal, akhir:saldoAkhir });
       sections.push({ label:'Laporan Arus Kas', sub:periodeText, startPage });
     }
     if(f.sections.perubahanmodal){
