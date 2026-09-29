@@ -3296,17 +3296,63 @@ function loadLedgerAccountsLocal(){
 function saveLedgerAccountsLocal(list){
   try{ localStorage.setItem(LEDGER_ACCOUNTS_CACHE_KEY, JSON.stringify(list)); }catch(e){}
 }
+/* Hasil: array = daftar akun ada di cloud | null = dokumen benar-benar BELUM ada di cloud |
+   false = GAGAL mengambil (sinyal jelek/permission/dll). Sebelumnya gagal ambil ikut dianggap
+   "cloud kosong" (null), lalu daftar lokal HP dikirim ke cloud dan bisa menimpa daftar yang
+   sebenarnya lengkap. Sekarang gagal ambil TIDAK pernah menulis apa pun ke cloud. */
 async function fetchLedgerAccountsCloud(){
-  if(!firebaseDb) return null;
+  if(!firebaseDb) return false;
   try{
     const snap = await firebaseDb.collection('meta').doc('ledgerAccounts').get();
-    if(snap.exists){
-      const data = snap.data();
-      if(data && Array.isArray(data.list) && data.list.length) return normalizeLedgerAccounts(data.list);
-    }
-  }catch(e){ console.warn('Gagal ambil daftar akun dari cloud:', e); }
-  return null;
+    if(!snap.exists) return null;
+    const data = snap.data();
+    if(data && Array.isArray(data.list) && data.list.length) return normalizeLedgerAccounts(data.list);
+    return null;
+  }catch(e){ console.warn('Gagal ambil daftar akun dari cloud:', e); toast('⚠️ Gagal ambil daftar akun dari cloud ('+(e.code||e.message)+')'); return false; }
 }
+/* Terapkan daftar akun dari cloud ke device ini (state + cache lokal + tampilan). Dipakai oleh
+   boot, listener real-time, dan refresh saat app kembali aktif. TIDAK menulis ke cloud. */
+let ledgerAccountsUnsub = null;
+let lastLedgerAccountsRefreshMs = 0;
+function applyLedgerAccountsFromCloud(list, notify){
+  if(!Array.isArray(list) || !list.length) return false;
+  if(!list.some(a=>a.id==='utama')) list = [{id:'utama', label:'Akun Utama'}].concat(list);
+  if(JSON.stringify(list)===JSON.stringify(ledgerAccounts)) return false;
+  ledgerAccounts = list;
+  saveLedgerAccountsLocal(list);
+  if(!ledgerAccounts.some(a=>a.id===activeLedgerId)){
+    toast('Akun yang sedang dibuka sudah dihapus di device lain — pindah ke Akun Utama.');
+    switchLedgerAccount('utama');
+  } else if(notify){
+    toast('Daftar akun diperbarui dari device lain');
+  }
+  if(typeof renderAccountSwitcher==='function') renderAccountSwitcher();
+  if(appBooted && currentTab==='settings') renderContent();
+  return true;
+}
+function listenLedgerAccountsCloud(){
+  if(ledgerAccountsUnsub || !firebaseDb) return;
+  ledgerAccountsUnsub = firebaseDb.collection('meta').doc('ledgerAccounts').onSnapshot(snap=>{
+    // Abaikan echo tulisan lokal milik device ini sendiri & snapshot dari cache (bisa basi).
+    if(!snap.exists || snap.metadata.hasPendingWrites || snap.metadata.fromCache) return;
+    const data = snap.data();
+    if(!data || !Array.isArray(data.list)) return;
+    applyLedgerAccountsFromCloud(normalizeLedgerAccounts(data.list), true);
+  }, err=>{ console.warn('Listener daftar akun terputus:', err); ledgerAccountsUnsub = null; toast('⚠️ Listener daftar akun terputus ('+(err.code||err.message)+')'); });
+}
+function stopListenLedgerAccountsCloud(){
+  if(ledgerAccountsUnsub){ ledgerAccountsUnsub(); ledgerAccountsUnsub = null; }
+}
+async function refreshLedgerAccountsFromCloud(){
+  if(!firebaseAuth || !firebaseAuth.currentUser || !firebaseDb) return;
+  const now = Date.now();
+  if(now - lastLedgerAccountsRefreshMs < 5000) return;
+  lastLedgerAccountsRefreshMs = now;
+  const list = await fetchLedgerAccountsCloud();
+  if(Array.isArray(list)) applyLedgerAccountsFromCloud(list, true); // null/false: jangan ubah apa-apa
+}
+// HP/PWA yang lama di background kehilangan koneksi listener — ambil ulang saat kembali aktif.
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') refreshLedgerAccountsFromCloud(); });
 async function pushLedgerAccountsCloud(list){
   if(!firebaseDb) return;
   try{
@@ -19910,6 +19956,7 @@ async function logout(){
     }
   }
   if(cloudUnsub){ cloudUnsub(); cloudUnsub=null; }
+  stopListenLedgerAccountsCloud();
   cloudDocRef = null;
   if(firebaseAuth){ firebaseAuth.signOut().then(()=> location.reload()); }
   else { DB.currentUserId=null; save(); location.reload(); }
@@ -20500,6 +20547,7 @@ function initApp(){
     setAppLoadingProgress(45);
     if(!user){
       if(cloudUnsub){ cloudUnsub(); cloudUnsub=null; }
+      stopListenLedgerAccountsCloud();
       cloudDocRef = null;
       renderCloudLoginScreen();
       // Belum ada user login → layar login itu sendiri sudah jadi tampilan "siap", jadi
@@ -20682,10 +20730,11 @@ async function setupCloudSync(cloudUser){
       }
       save(); // save() sendiri yang menjadwalkan push ke cloud & set status pending → syncing → tersinkron
       listenCloudChanges();
+      listenLedgerAccountsCloud(); // [FIX] cabang ini dulu TIDAK pernah menyamakan daftar akun dengan cloud
       if(appBooted){ renderNav(); renderContent(); }
     }).catch(err=>{
       console.warn('Gagal mengambil data cloud sebelum push perubahan tertunda, kirim data lokal saja:', err);
-      primeLastKnownCloudUpdatedAt().then(()=> pushDbToCloud()).then(()=>{ listenCloudChanges(); });
+      primeLastKnownCloudUpdatedAt().then(()=> pushDbToCloud()).then(()=>{ listenCloudChanges(); listenLedgerAccountsCloud(); });
     });
     return;
   }
@@ -20704,14 +20753,12 @@ async function setupCloudSync(cloudUser){
     // Samakan daftar akun (jurnal) dengan versi terbaru di cloud, di background — tidak
     // menahan proses boot supaya login tetap terasa cepat.
     fetchLedgerAccountsCloud().then(list=>{
-      if(list){
-        ledgerAccounts = list;
-        saveLedgerAccountsLocal(list);
-        if(!ledgerAccounts.some(a=>a.id===activeLedgerId)) activeLedgerId = 'utama';
-        if(appBooted && currentTab==='settings') renderContent();
-      } else {
+      if(Array.isArray(list)){
+        applyLedgerAccountsFromCloud(list, false);
+      } else if(list===null){
         pushLedgerAccountsCloud(ledgerAccounts); // pertama kali dipakai — buat dokumennya di cloud
-      }
+      } // list===false: gagal ambil — JANGAN kirim daftar lokal ke cloud (bisa menimpa daftar lengkap)
+      listenLedgerAccountsCloud(); // sesudah ini perubahan daftar akun dari device lain masuk otomatis
     });
   }).catch(async err=>{
     toast('Gagal memuat data cloud, memakai data lokal untuk sementara: '+err.message);
