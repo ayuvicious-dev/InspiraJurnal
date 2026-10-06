@@ -897,6 +897,14 @@ body.app-preboot #bottomNavSheetBackdrop,
 body.app-preboot #bottomNavSheet{
   visibility:hidden;
 }
+/* Tabel Reminder: Pembayaran Hutang — semua kolom rata tengah */
+.tblHutangReminder th, .tblHutangReminder td{ text-align:center !important; }
+/* Baris kontrol di atas tabel Reminder Hutang: tanggal, tombol Bayar Semua, dan kotak cari dibuat sama tinggi & lebar */
+.hutangBarRow{ flex-wrap:nowrap !important; overflow-x:auto; }
+.hutangBarRow > *{ width:230px; flex:0 0 230px; box-sizing:border-box; }
+.hutangBarRow .field input, .hutangBarRow input[type="text"]{ height:38px; box-sizing:border-box; width:100%; font-size:13px; border-radius:9px; }
+.hutangBarRow > .btn{ height:38px; width:230px; padding:0 10px; font-size:13px; border-radius:9px; }
+a.goto-reminder-link, a.goto-reminder-link:hover, a.goto-reminder-link:visited, a.goto-reminder-link:focus, a.goto-reminder-link:active{ color:var(--ink); text-decoration:none; }
 </style>
 </head>
 <body class="app-preboot">
@@ -2059,6 +2067,7 @@ function openQuickAddJurnalModal(){
     qjReminderTgl.style.display = qjReminderCheck.checked ? '' : 'none';
     if(!qjReminderCheck.checked) qjReminderTgl.value='';
   });
+  bindReminderDefault(qjReminderCheck, qjReminderTgl, document.getElementById('qjTgl'));
   const qjAmorCheck = document.getElementById('qjAmorCheck');
   const qjAmorWrap = document.getElementById('qjAmorWrap');
   qjAmorCheck.addEventListener('change', ()=>{
@@ -4699,6 +4708,30 @@ function initAllTagPickers(root){
 })();
 
 /* ---- Generic search filter helper ---- */
+/* Default Tanggal Reminder untuk pembayaran lewat akun hutang: tanggal 11 di BULAN SETELAH tanggal
+   transaksi (mis. transaksi 6 Okt -> reminder 11 Nov; transaksi Des -> 11 Jan tahun berikutnya).
+   Kalau tanggal transaksi kosong/tidak valid, pakai hari ini. */
+function defaultReminderTgl(tglTransaksi){
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(tglTransaksi||'') ? tglTransaksi : todayStr();
+  let y = parseInt(base.slice(0,4),10), m = parseInt(base.slice(5,7),10)+1;
+  if(m>12){ m=1; y++; }
+  return y+'-'+String(m).padStart(2,'0')+'-11';
+}
+/* Pasang default di atas ke 1 set checkbox "Reminder Payment" + input Tanggal Reminder: begitu
+   dicentang & tanggal masih kosong, isi otomatis. Selama tanggal itu belum diubah manual, ia ikut
+   bergeser kalau Tanggal transaksi diganti (ditandai dataset.auto). */
+function bindReminderDefault(chk, tglInp, trxDateInp){
+  if(!chk || !tglInp) return;
+  chk.addEventListener('change', ()=>{
+    if(chk.checked){
+      if(!tglInp.value){ tglInp.value = defaultReminderTgl(trxDateInp && trxDateInp.value); tglInp.dataset.auto = '1'; }
+    } else { delete tglInp.dataset.auto; }
+  });
+  tglInp.addEventListener('input', ()=>{ delete tglInp.dataset.auto; });
+  if(trxDateInp) trxDateInp.addEventListener('change', ()=>{
+    if(chk.checked && tglInp.dataset.auto==='1') tglInp.value = defaultReminderTgl(trxDateInp.value);
+  });
+}
 function matchSearch(text, term){
   if(!term) return true;
   return (text||'').toLowerCase().includes(term.toLowerCase());
@@ -5596,6 +5629,8 @@ function renderContent(){
 const RENDERERS = {};
 
 /* ================= DASHBOARD ================= */
+/* Kata kunci pencarian di kartu "Reminder: Pembayaran Hutang" (Dashboard). */
+let hutangReminderSearch = '';
 RENDERERS.dashboard = function(c){
   // KAT (Akumulasi Penyusutan) adalah kontra-akun aset: harus mengurangi Total Aset, bukan menambah
   const totalAset = ['AL','PS','PIU','ALL','AT','ALN'].reduce((s,k)=>s+sumByKategoriKepemilikan(k),0) - sumByKategoriKepemilikan('KAT');
@@ -5707,22 +5742,36 @@ RENDERERS.dashboard = function(c){
   // Dipecah 5 baris per halaman (lebih pendek dari PAGE_SIZE default 10 supaya kartu dashboard
   // ini tidak terlalu panjang), pakai navigasi Sebelumnya/Selanjutnya generik yang sama seperti
   // tabel riwayat di fitur input lain.
-  const hutangReminderPg = paginateRows('dashboardHutang', hutangReminderList, 5);
+  // Pencarian Item/Keterangan (+ nama akun hutang). hutangReminderList tetap daftar PENUH (dipakai
+  // tombol Bayar Semua & total keseluruhan); hanya tampilan tabel yang disaring.
+  const hutangReminderView = hutangReminderSearch
+    ? hutangReminderList.filter(x=> matchSearch(x.nama+' '+x.akunNama, hutangReminderSearch))
+    : hutangReminderList;
+  const hutangReminderPg = paginateRows('dashboardHutang', hutangReminderView, 5);
   // Jumlah keseluruhan hutang dari SEMUA transaksi yang tampil di daftar reminder ini (bukan
   // cuma yang lagi ditampilkan di halaman aktif), dipakai buat baris total di bawah tabel.
   const totalHutangReminder = hutangReminderList.reduce((s,x)=> s + (Number(x.nominal)||0), 0);
   html += `<div class="card" style="margin-top:14px">
     <div class="section-title"><h3>Reminder: Pembayaran Hutang</h3><span class="hint">${hutangReminderList.length} transaksi</span></div>
-    ${hutangReminderList.length? `<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:2px 0 12px">
-      <div class="field" style="margin:0"><label style="font-size:12px">Bayar Semua Hutang Jatuh Tempo s.d. Tanggal</label><input type="date" id="hutangBayarSemuaTgl" value="${todayStr()}"></div>
-      <button type="button" class="btn small" id="btnBayarSemuaHutang">💳 Bayar Semua Hutang Jatuh Tempo</button>
+    ${hutangReminderList.length? `<div class="hutangBarRow" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:2px 0 12px">
+      ${searchBoxHtml('hutangReminderSearchInput','Cari item/keterangan')}
     </div>` : ''}
-    ${hutangReminderList.length? `<div class="tablewrap"><table class="sheet"><thead><tr><th>Aksi</th><th>Item/Keterangan</th><th>Akun Hutang</th><th>Tanggal Reminder</th><th>Sisa</th></tr></thead><tbody>
+    ${hutangReminderList.length? `<div class="tablewrap"><table class="sheet tblHutangReminder"><thead><tr><th>Aksi</th><th>Item/Keterangan</th><th class="num">Nominal Hutang</th><th>Akun Hutang</th><th>Tanggal Reminder</th><th>Sisa</th></tr></thead><tbody>
+    ${hutangReminderPg.pageRows.length? '' : `<tr><td colspan="6" class="mini" style="text-align:center;padding:14px">Tidak ada reminder yang cocok dengan "${escHtml(hutangReminderSearch)}".</td></tr>`}
     ${hutangReminderPg.pageRows.map(x=>{
       const lewat = x.sisa!==null && x.sisa<0;
-      return `<tr><td><button type="button" class="btn small bayarReminderHutang" data-src="${x.src}" data-id="${x.obj.id}" data-akunid="${x.akunId||''}" data-nominal="${x.nominal||0}">Bayar</button></td><td class="wrap-cell">${escHtml(x.nama)}</td><td>${x.akunNama}</td><td>${fmtTgl(x.obj.reminderTanggal)}</td><td><span class="chip ${lewat?'low':'warn'}">${lewat?'⛔ lewat '+Math.abs(x.sisa)+' hr':'⏰ H-'+x.sisa}</span></td></tr>`;
+      // Tujuan klik Item/Keterangan: transaksi awal di Pembelian / Biaya / Aset / Jurnal Umum.
+      // Jurnal yang ref-nya milik Aset (aset-perolehan-/aset-dep-) dibuka di fitur Aset.
+      let gotoTipe = x.src, gotoId = x.obj.id;
+      if(x.src==='jurnal'){
+        const aid = asetIdFromRef(x.obj.ref);
+        if(aid && DB.aset.some(a=>a.id===aid)){ gotoTipe = 'aset'; gotoId = aid; }
+      }
+      const gotoTitle = {pembelian:'Pembelian', biaya:'Biaya', aset:'Aset', jurnal:'Jurnal Umum'}[gotoTipe] || '';
+      return `<tr><td><button type="button" class="btn small bayarReminderHutang" data-src="${x.src}" data-id="${x.obj.id}" data-akunid="${x.akunId||''}" data-nominal="${x.nominal||0}">Bayar</button></td><td class="wrap-cell"><a href="#" class="goto-reminder-link" data-tipe="${gotoTipe}" data-tid="${gotoId}" title="Buka transaksi awal di ${gotoTitle}" style="font-weight:600;text-decoration:none;cursor:pointer">${escHtml(x.nama)}</a></td><td class="num">${fmtRp(Number(x.nominal)||0)}</td><td>${x.akunNama}</td><td><input type="date" class="hutangReminderTglInput" data-src="${x.src}" data-id="${x.obj.id}" data-tipe="${gotoTipe}" data-tid="${gotoId}" value="${x.obj.reminderTanggal||''}" title="Klik untuk ubah tanggal reminder (ikut mengubah transaksi awal)" style="padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--input-bg);color:var(--ink);font-size:12.5px;text-align:center"></td><td><span class="chip ${lewat?'low':'warn'}">${lewat?'⛔ lewat '+Math.abs(x.sisa)+' hr':'⏰ H-'+x.sisa}</span></td></tr>`;
     }).join('')}
     </tbody></table></div>${paginationBarHtml('dashboardHutang', hutangReminderPg.page, hutangReminderPg.totalPages, hutangReminderPg.total, hutangReminderPg.pageSize)}
+    ${hutangReminderSearch? `<div class="mini" style="margin-top:10px;text-align:right">Hasil pencarian: ${hutangReminderView.length} transaksi — ${fmtRp(hutangReminderView.reduce((t,x)=> t+(Number(x.nominal)||0),0))}</div>` : ''}
     <div class="mini" style="margin-top:10px;text-align:right;font-weight:600">Jumlah Keseluruhan Hutang (dari ${hutangReminderList.length} transaksi reminder di atas): ${fmtRp(totalHutangReminder)}</div>` : '<div class="mini">Belum ada reminder pembayaran hutang. Centang "Reminder Payment" saat mencatat Pembelian, Biaya, atau Jurnal Umum yang dikreditkan/dibayar melalui akun hutang supaya muncul di sini.</div>'}
   </div>`;
 
@@ -5792,6 +5841,37 @@ RENDERERS.dashboard = function(c){
 
   c.innerHTML = html;
 
+  // Ubah Tanggal Reminder langsung dari tabel: nilainya ditulis balik ke transaksi awal (Pembelian /
+  // Biaya / Jurnal Umum; untuk jurnal perolehan Aset ikut ke data Aset-nya juga, lihat edit Aset
+  // yang menyalin reminderTanggal ke jurnal 'aset-perolehan-'), lalu daftar dirender ulang karena
+  // urutan & chip "Sisa" bergantung pada tanggal ini.
+  c.querySelectorAll('.hutangReminderTglInput').forEach(inp=> inp.addEventListener('change', ()=>{
+    const baru = inp.value;
+    if(!baru){ toast('Tanggal reminder tidak boleh kosong'); RENDERERS.dashboard(c); return; }
+    const item = hutangReminderList.find(x=> x.src===inp.dataset.src && x.obj.id===inp.dataset.id);
+    if(!item) return;
+    item.obj.reminderTanggal = baru;
+    markDirtySync(item.obj.id);
+    if(inp.dataset.tipe==='aset'){
+      const a = DB.aset.find(x=> x.id===inp.dataset.tid);
+      if(a){ a.reminderTanggal = baru; markDirtySync(a.id); }
+    }
+    save();
+    toast('Tanggal reminder diperbarui');
+    RENDERERS.dashboard(c);
+  }));
+  // Klik Item/Keterangan -> loncat ke transaksi awalnya (Pembelian, Biaya, Aset, atau Jurnal Umum).
+  c.querySelectorAll('.goto-reminder-link').forEach(el=> el.addEventListener('click', e=>{
+    e.preventDefault();
+    const t = el.dataset.tipe, id = el.dataset.tid;
+    if(t==='pembelian') gotoPembelianTransaksi(id);
+    else if(t==='biaya') gotoBiayaTransaksi(id);
+    else if(t==='aset') gotoAsetTransaksi(id);
+    else gotoJurnalTransaksi(id);
+  }));
+  const hutangSearchEl = document.getElementById('hutangReminderSearchInput');
+  if(hutangSearchEl) hutangSearchEl.value = hutangReminderSearch;
+  bindSearchInput('hutangReminderSearchInput', v=>{ hutangReminderSearch = v; setPage('dashboardHutang', 1); });
   bindPaginationUI(c, 'dashboardHutang', hutangReminderPg.totalPages, ()=> RENDERERS.dashboard(c));
   bindPaginationUI(c, 'dashboardRecent', recentJPg.totalPages, ()=> RENDERERS.dashboard(c));
   bindPaginationUI(c, 'dashboardKadaluwarsa', kadaluwarsaPg.totalPages, ()=> RENDERERS.dashboard(c));
@@ -5821,18 +5901,6 @@ RENDERERS.dashboard = function(c){
     const item = hutangReminderList.find(x=> x.src===src && x.obj.id===id);
     openBayarHutangModal([{ akunId, nominal, objs: item ? [item.obj] : [] }]);
   }));
-
-  // Tombol "Bayar Semua Hutang Jatuh Tempo": ambil tanggal batas dari input di sebelahnya, lalu
-  // saring hutangReminderList (daftar penuh, bukan cuma 1 halaman) untuk transaksi yang Tanggal
-  // Reminder-nya sudah jatuh tempo pada/sebelum tanggal itu (termasuk yang sudah lewat/⛔),
-  // lalu buka modal pembayaran massal (openBayarSemuaHutangModal) buat konfirmasi & pilih Kas/Bank.
-  c.querySelector('#btnBayarSemuaHutang')?.addEventListener('click', ()=>{
-    const cutoff = document.getElementById('hutangBayarSemuaTgl')?.value;
-    if(!cutoff) return toast('Pilih tanggal batas jatuh tempo dulu');
-    const due = hutangReminderList.filter(x=> x.obj.reminderTanggal && x.obj.reminderTanggal <= cutoff);
-    if(!due.length) return toast('Tidak ada hutang yang jatuh tempo sampai dengan tanggal tersebut');
-    openBayarSemuaHutangModal(due);
-  });
 };
 
 /* ================= COA ================= */
@@ -8745,7 +8813,7 @@ function bindJurnalRows(){
   wrap.querySelectorAll('.jRowReminderCheck').forEach(chk=> chk.addEventListener('change', ()=>{
     const rid = chk.id.replace('jRowReminderCheck_','');
     const tgl = document.getElementById('jRowReminderTgl_'+rid);
-    if(tgl){ tgl.style.display = chk.checked ? '' : 'none'; if(!chk.checked) tgl.value=''; }
+    if(tgl){ tgl.style.display = chk.checked ? '' : 'none'; if(!chk.checked) tgl.value=''; else if(!tgl.value) tgl.value = defaultReminderTgl(document.getElementById('jTgl')?.value); }
     syncJurnalRowsFromDom();
   }));
   wrap.querySelectorAll('.jRowReminderTgl').forEach(inp=> inp.addEventListener('input', ()=> syncJurnalRowsFromDom()));
@@ -9496,6 +9564,7 @@ RENDERERS.biaya = function(c){
     bReminderTgl.style.display = bReminderCheck.checked ? '' : 'none';
     if(!bReminderCheck.checked) bReminderTgl.value='';
   });
+  bindReminderDefault(bReminderCheck, bReminderTgl, document.getElementById('bTgl'));
   updateBReminderVisibility();
 
   document.getElementById('btnPostBiaya').addEventListener('click', ()=>{
@@ -9700,6 +9769,7 @@ function openEditJurnalModal(j){
     ejReminderTgl.style.display = ejReminderCheck.checked ? '' : 'none';
     if(!ejReminderCheck.checked) ejReminderTgl.value='';
   });
+  bindReminderDefault(ejReminderCheck, ejReminderTgl, document.getElementById('ejTgl'));
   updateEjReminderVisibility();
   m.querySelector('#ejSave').addEventListener('click', ()=>{
     const tgl = document.getElementById('ejTgl').value;
@@ -9854,7 +9924,7 @@ function openEditJurnalGroupModal(items){
     m.querySelectorAll('.egRowReminderCheck').forEach(chk=> chk.addEventListener('change', ()=>{
       const rid = chk.id.replace('egRowReminderCheck_','');
       const tgl = document.getElementById('egRowReminderTgl_'+rid);
-      if(tgl){ tgl.style.display = chk.checked ? '' : 'none'; if(!chk.checked) tgl.value=''; }
+      if(tgl){ tgl.style.display = chk.checked ? '' : 'none'; if(!chk.checked) tgl.value=''; else if(!tgl.value) tgl.value = defaultReminderTgl(document.getElementById('egTgl')?.value); }
       syncFromDom();
     }));
     m.querySelectorAll('.egRowReminderTgl').forEach(inp=> inp.addEventListener('input', ()=> syncFromDom()));
@@ -10062,6 +10132,7 @@ function openEditBiayaModal(b){
     ebReminderTgl.style.display = ebReminderCheck.checked ? '' : 'none';
     if(!ebReminderCheck.checked) ebReminderTgl.value='';
   });
+  bindReminderDefault(ebReminderCheck, ebReminderTgl, document.getElementById('ebTgl'));
   updateEbReminderVisibility();
   m.querySelector('#ebSave').addEventListener('click', ()=>{
     const tgl = document.getElementById('ebTgl').value;
@@ -10796,6 +10867,7 @@ RENDERERS.pembelian = function(c){
     pReminderTgl.style.display = pReminderCheck.checked ? '' : 'none';
     if(!pReminderCheck.checked) pReminderTgl.value='';
   });
+  bindReminderDefault(pReminderCheck, pReminderTgl, document.getElementById('pTgl'));
   updatePReminderVisibility();
 
   /* "Nama Bahan/Barang" quick-add: a + button appears right under the field only when the typed
@@ -11129,6 +11201,7 @@ function renderPembelianTable(){
       epReminderTgl.style.display = epReminderCheck.checked ? '' : 'none';
       if(!epReminderCheck.checked) epReminderTgl.value='';
     });
+    bindReminderDefault(epReminderCheck, epReminderTgl, document.getElementById('epTgl'));
     updateEpReminderVisibility();
     const epKlasifikasi = document.getElementById('epKlasifikasi');
     const epItemLabel = document.getElementById('epItemLabel');
@@ -19365,6 +19438,7 @@ function openEditAsetModal(a){
     eaReminderTgl.style.display = eaReminderCheck.checked ? '' : 'none';
     if(!eaReminderCheck.checked) eaReminderTgl.value='';
   });
+  bindReminderDefault(eaReminderCheck, eaReminderTgl, document.getElementById('eaTgl'));
   /* "Akun yang Dikreditkan" sekarang bisa diubah di form edit juga — kalau akun baru yang dipilih
      berkategori Kewajiban (KW/hutang), tampilkan kolom Reminder Payment; kalau bukan, sembunyikan
      dan reset centangnya (sama seperti perilaku form Tambah Aset). */
@@ -19640,6 +19714,7 @@ RENDERERS.aset = function(c){
       asReminderTgl.style.display = asReminderCheck.checked ? '' : 'none';
       if(!asReminderCheck.checked) asReminderTgl.value='';
     });
+    bindReminderDefault(asReminderCheck, asReminderTgl, document.getElementById('asTgl'));
     updateAsReminderVisibility();
   }
   const asLokasiEl = document.querySelector('#asLokasi')?.closest('[data-lokasimultifield]');
