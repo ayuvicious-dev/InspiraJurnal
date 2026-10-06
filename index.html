@@ -5730,10 +5730,10 @@ RENDERERS.dashboard = function(c){
   const hutangReminderList = [
     ...DB.pembelian.filter(p=> p.reminderPayment && p.reminderTanggal && !p.reminderLunas).map(p=>{
       const item = (p.tipe||'bahan')==='barang' ? DB.barang.find(i=>i.id===(p.refId||p.produkId)) : DB.produk.find(i=>i.id===(p.refId||p.produkId));
-      return { src:'pembelian', obj:p, sisa: daysUntil(p.reminderTanggal), nama: p.keterangan || item?.nama || '-', akunId: p.bayarId, akunNama: akunById(p.bayarId)?.nama||'?', nominal: p.total };
+      return { src:'pembelian', obj:p, sisa: daysUntil(p.reminderTanggal), nama: item?.nama || p.keterangan || '-', akunId: p.bayarId, akunNama: akunById(p.bayarId)?.nama||'?', nominal: p.total };
     }),
     ...DB.jurnal.filter(j=> j.reminderPayment && j.reminderTanggal && !j.reminderLunas && !(j.ref && (j.ref.indexOf('pembelian-')===0 || j.ref.indexOf('biaya-')===0))).map(j=>({
-      src:'jurnal', obj:j, sisa: daysUntil(j.reminderTanggal), nama: j.keterangan || akunById(j.debitId)?.nama || '-', akunId: j.kreditId, akunNama: akunById(j.kreditId)?.nama||'?', nominal: j.nominal
+      src:'jurnal', obj:j, sisa: daysUntil(j.reminderTanggal), nama: (DB.aset.find(a=> a.id===asetIdFromRef(j.ref))?.nama) || j.keterangan || akunById(j.debitId)?.nama || '-', akunId: j.kreditId, akunNama: akunById(j.kreditId)?.nama||'?', nominal: j.nominal
     })),
     ...DB.biaya.filter(b=> b.reminderPayment && b.reminderTanggal && !b.reminderLunas).map(b=>({
       src:'biaya', obj:b, sisa: daysUntil(b.reminderTanggal), nama: b.keterangan || akunById(b.bebanId)?.nama || '-', akunId: b.bayarId, akunNama: akunById(b.bayarId)?.nama||'?', nominal: b.nominal
