@@ -2099,7 +2099,7 @@ function openQuickAddJurnalModal(){
       // Sama seperti baris Debit "Amortisasi" di form Jurnal Umum lengkap: nominal diposting dulu ke
       // Akun Aktiva (dibayar dimuka), lalu diprorata otomatis setiap hari ke Akun Debit asli (beban)
       // lewat mesin amortisasi harian yang sama dengan menu Biaya (jalankanAutoAmortisasi).
-      const biayaObj = { id:uid(), tanggal:tgl, bayarId:kreditId, bebanId:debitId, keterangan:ket, nominal:nom, amortisasi:true, periodeAmor:'hari', jumlahPeriode:amorHari, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null, prepaidId:aktivaId };
+      const biayaObj = { id:uid(), tanggal:tgl, bayarId:kreditId, bebanId:debitId, keterangan:ket, nominal:nom, amortisasi:true, periodeAmor:'hari', jumlahPeriode:amorHari, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null, prepaidId:aktivaId, asal:'jurnal' };
       DB.biaya.push(biayaObj);
       markDirtySync(biayaObj.id);
       postJurnal({ tanggal:tgl, keterangan:'Bayar dimuka: '+(ket||akunById(debitId)?.nama||''), debitId:aktivaId, kreditId, nominal:nom, sumber:'Biaya', ref:'biaya-bayar-'+biayaObj.id, tags, bukti });
@@ -8740,6 +8740,7 @@ function setListPickerValue(id, value){
 
 /* ================= JURNAL UMUM ================= */
 let jurnalSearch = '';
+let jurnalAmorSearch = ''; // kata kunci pencarian khusus tabel Riwayat Amortisasi (Jurnal Umum)
 let jurnalSort = 'created_desc';
 let jurnalStatusFilter = 'all'; // 'all' | 'proses' | 'selesai' — filter status amortisasi khusus Riwayat Jurnal
 /* Dropdown filter status amortisasi khusus Riwayat Jurnal (Jurnal Umum), ditaruh di sebelah dropdown
@@ -9099,30 +9100,89 @@ function hapusRiwayatImporJurnal(historyId){
 // 'biaya-bayar-<id>') — bukan tiap posting harian/bulanannya — supaya daftar ini ringkas walau
 // amortisasinya sudah berjalan puluhan hari. Tombol hapus (simbol 🗑) per baris akan menghapus
 // SELURUH transaksi amortisasi milik jadwal itu sekaligus (lihat hapusRiwayatAmortisasi).
+/* Daftar riwayat amortisasi (sudah difilter kotak pencarian jurnalAmorSearch, urut tanggal mulai
+   terbaru). Isinya gabungan dua sumber: jadwal Biaya (DB.biaya amortisasi:true — dibuat dari menu
+   Biaya, Impor Biaya, Tambah Jurnal, atau Jurnal Cepat) dan pembelian beramortisasi (DB.pembelian).
+   Tiap entri membawa 'asal' supaya namanya bisa diklik & loncat ke tempat transaksi awal dibuat:
+   biaya -> fitur Biaya, jurnal/jurnalcepat -> baris "Bayar dimuka" di Jurnal Umum, pembelian ->
+   fitur Pembelian. Biaya lama yang belum punya penanda asal dianggap dari fitur Biaya.
+   Pencarian mencocokkan keterangan, akun, tanggal, nominal, progress, status, asal, dan tag. */
+function jurnalRiwayatAmortisasiEntries(){
+  const out = [];
+  (DB.biaya||[]).filter(b=>b.amortisasi).forEach(b=>{
+    out.push({
+      kind:'biaya', id:b.id, asal:(b.asal||'biaya'), tanggal:b.tanggal,
+      nama:(b.keterangan || akunById(b.bebanId)?.nama || '-'),
+      nominal:(b.nominal||0), terposting:biayaPeriodeTerposting(b), jumlah:biayaJumlahPeriode(b),
+      unit:(biayaPeriodeAmor(b)==='hari'?'hari':'bulan'), selesai:biayaAmortisasiSelesai(b),
+      extra:[akunById(b.bebanId)?.nama, akunById(b.bayarId)?.nama, akunById(b.prepaidId)?.nama, (b.tags||[]).join(' ')]
+    });
+  });
+  (DB.pembelian||[]).filter(p=>p.amortisasi && (p.amortisasiHari||0)>0).forEach(p=>{
+    const item = p.tipe==='barang' ? (DB.barang||[]).find(x=>x.id===p.refId) : (DB.produk||[]).find(x=>x.id===(p.refId||p.produkId));
+    const namaItem = (item && (item.nama||item.namaBarang)) || '';
+    out.push({
+      kind:'pembelian', id:p.id, asal:'pembelian', tanggal:p.tanggal,
+      nama:(p.keterangan || namaItem || 'Pembelian'),
+      nominal:(p.total||0), terposting:(p.amortisasiTerposting||0), jumlah:p.amortisasiHari,
+      unit:'hari', selesai:pembelianAmortisasiSelesai(p),
+      extra:[namaItem, akunById(p.bayarId)?.nama, akunById(p.amortisasiPrepaidId)?.nama, (p.tags||[]).join(' ')]
+    });
+  });
+  return out.sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
+}
+const AMOR_ASAL_LABEL = { biaya:'Biaya', jurnal:'Jurnal Umum', jurnalcepat:'Jurnal Umum', pembelian:'Pembelian' };
+function jurnalRiwayatAmortisasiList(){
+  const all = jurnalRiwayatAmortisasiEntries();
+  const q = (jurnalAmorSearch||'').trim().toLowerCase();
+  if(!q) return all;
+  const words = q.split(/\s+/).filter(Boolean);
+  return all.filter(e=>{
+    const hay = [
+      e.nama, e.tanggal, fmtTgl(e.tanggal), String(e.nominal), fmtRp(e.nominal),
+      e.terposting+'/'+e.jumlah, e.unit, (e.selesai ? 'selesai' : 'proses berjalan'),
+      AMOR_ASAL_LABEL[e.asal]||'', ...e.extra
+    ].join(' ').toLowerCase();
+    return words.every(w=> hay.includes(w));
+  });
+}
+/* Loncat ke tempat transaksi amortisasi ini pertama kali dibuat (dipanggil dari nama di tabel). */
+function gotoAsalAmortisasi(kind, id, asal){
+  if(kind==='pembelian'){ gotoPembelianTransaksi(id); return; }
+  if(asal==='jurnal' || asal==='jurnalcepat'){
+    const j = DB.jurnal.find(x=> x.ref==='biaya-bayar-'+id);
+    if(j){ gotoJurnalTransaksi(j.id); return; }
+  }
+  gotoBiayaTransaksi(id);
+}
 function jurnalRiwayatAmortisasiHtml(){
-  const list = (DB.biaya||[]).filter(b=>b.amortisasi).slice().sort((a,b)=> (b.tanggal||'').localeCompare(a.tanggal||''));
+  const list = jurnalRiwayatAmortisasiList();
   const { pageRows, page, totalPages, total, pageSize } = paginateRows('riwayatAmortisasiJurnal', list, 5);
-  const rows = pageRows.map(b=>{
-    const terposting = biayaPeriodeTerposting(b), jumlah = biayaJumlahPeriode(b);
-    const selesai = biayaAmortisasiSelesai(b);
+  const linkSt = 'color:inherit;font-weight:600;text-decoration:underline;cursor:pointer';
+  const rows = pageRows.map(e=>{
+    const asalLabel = AMOR_ASAL_LABEL[e.asal] || 'Biaya';
+    const delCell = e.kind==='biaya'
+      ? `<button class="btn small danger btnHapusRiwayatAmortisasi" data-id="${e.id}" type="button" title="Hapus seluruh transaksi amortisasi ini">🗑</button>`
+      : `<span class="mini" title="Amortisasi dari Pembelian dihapus lewat menu Pembelian">—</span>`;
     return `<tr>
-      <td class="wrap-cell" style="text-align:center">${fmtTgl(b.tanggal)}</td>
-      <td class="wrap-cell" style="text-align:center">${escHtml(b.keterangan || akunById(b.bebanId)?.nama || '-')}</td>
-      <td class="num" style="text-align:center">${fmtRp(b.nominal||0)}</td>
-      <td class="wrap-cell" style="text-align:center">${terposting}/${jumlah} ${biayaPeriodeAmor(b)==='hari'?'hari':'bulan'}${selesai?' <span class="mini">(selesai)</span>':''}</td>
-      <td style="text-align:center"><button class="btn small danger btnHapusRiwayatAmortisasi" data-id="${b.id}" type="button" title="Hapus seluruh transaksi amortisasi ini">🗑</button></td>
+      <td class="wrap-cell" style="text-align:center">${fmtTgl(e.tanggal)}</td>
+      <td class="wrap-cell" style="text-align:center"><a href="#" class="amorAsalLink" data-kind="${e.kind}" data-id="${e.id}" data-asal="${e.asal}" title="Buka transaksi awal di ${asalLabel}" style="${linkSt}">${escHtml(e.nama)}</a><div class="mini">dari ${asalLabel}</div></td>
+      <td class="num" style="text-align:center">${fmtRp(e.nominal)}</td>
+      <td class="wrap-cell" style="text-align:center">${e.terposting}/${e.jumlah} ${e.unit}${e.selesai?' <span class="mini">(selesai)</span>':''}</td>
+      <td style="text-align:center">${delCell}</td>
     </tr>`;
   }).join('');
   return `<div class="tablewrap"><table class="sheet"><thead><tr><th style="text-align:center">Tanggal Mulai</th><th style="text-align:center">Keterangan</th><th style="text-align:center">Nominal</th><th style="text-align:center">Progress</th><th></th></tr></thead><tbody>
-  ${rows || '<tr><td colspan="5" class="empty" style="text-align:center">Belum ada riwayat amortisasi</td></tr>'}
+  ${rows || `<tr><td colspan="5" class="empty" style="text-align:center">${(jurnalAmorSearch||'').trim() ? 'Tidak ada riwayat amortisasi yang cocok dengan pencarian' : 'Belum ada riwayat amortisasi'}</td></tr>`}
   </tbody></table></div>${paginationBarHtml('riwayatAmortisasiJurnal', page, totalPages, total, pageSize)}`;
 }
 function renderJurnalRiwayatAmortisasiTable(){
   const wrap = document.getElementById('jurnalRiwayatAmortisasiWrap'); if(!wrap) return;
-  const total = (DB.biaya||[]).filter(b=>b.amortisasi).length;
+  const total = jurnalRiwayatAmortisasiList().length;
   const totalPages = Math.max(1, Math.ceil(total/5));
   wrap.innerHTML = jurnalRiwayatAmortisasiHtml();
   wrap.querySelectorAll('.btnHapusRiwayatAmortisasi').forEach(btn=> btn.addEventListener('click', ()=> hapusRiwayatAmortisasi(btn.dataset.id)));
+  wrap.querySelectorAll('.amorAsalLink').forEach(el=> el.addEventListener('click', e=>{ e.preventDefault(); gotoAsalAmortisasi(el.dataset.kind, el.dataset.id, el.dataset.asal); }));
   bindPaginationUI(wrap, 'riwayatAmortisasiJurnal', totalPages, renderJurnalRiwayatAmortisasiTable);
 }
 // Hapus 1 jadwal amortisasi beserta SELURUH transaksi yang sudah diposting untuknya: transaksi
@@ -9174,8 +9234,8 @@ RENDERERS.jurnal = function(c){
   <div class="mini" style="margin-bottom:8px;line-height:1.6">Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh baris jurnal</b> yang dihasilkan dari impor Excel tersebut.</div>
   <div id="jurnalRiwayatImporWrap"></div></div>
   <div class="card" style="margin-top:14px">
-  <div class="section-title"><h3>Riwayat Amortisasi</h3></div>
-  <div class="mini" style="margin-bottom:8px;line-height:1.6">Tiap baris mewakili satu jadwal amortisasi lewat transaksi "Bayar dimuka" pertamanya. Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh transaksi amortisasi otomatis</b> yang sudah berjalan untuk jadwal tersebut.</div>
+  <div class="section-title"><h3>Riwayat Amortisasi</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${searchBoxHtml('jurnalAmorSearchInput','Cari keterangan/akun/tanggal/nominal')}</div></div>
+  <div class="mini" style="margin-bottom:8px;line-height:1.6">Tiap baris mewakili satu jadwal amortisasi lewat transaksi "Bayar dimuka" pertamanya (atau pembelian beramortisasi). Klik namanya untuk langsung membuka transaksi awalnya. Menghapus salah satu riwayat di bawah ini akan ikut menghapus <b>seluruh transaksi amortisasi otomatis</b> yang sudah berjalan untuk jadwal tersebut.</div>
   <div id="jurnalRiwayatAmortisasiWrap"></div></div>`;
   c.innerHTML = html;
   bindJurnalRows();
@@ -9189,6 +9249,15 @@ RENDERERS.jurnal = function(c){
   document.getElementById('jurnalStatusFilterInput').addEventListener('change', e=>{ jurnalStatusFilter=e.target.value; setPage('jurnal',1); renderJurnalTable(); });
   renderJurnalRiwayatImporTable();
   renderJurnalRiwayatAmortisasiTable();
+  const amorSearchEl = document.getElementById('jurnalAmorSearchInput');
+  if(amorSearchEl){
+    amorSearchEl.value = jurnalAmorSearch; // pertahankan kata kunci kalau halaman dirender ulang
+    amorSearchEl.addEventListener('input', e=>{
+      jurnalAmorSearch = e.target.value;
+      setPage('riwayatAmortisasiJurnal', 1);
+      renderJurnalRiwayatAmortisasiTable(); // hanya render ulang tabelnya, jadi fokus kotak cari tidak hilang
+    });
+  }
   document.getElementById('btnPostJurnal').addEventListener('click', ()=>{
     syncJurnalRowsFromDom();
     const debitRows = jurnalRows.filter(r=>r.tipe==='debit' && r.akunId && rupiahToNumber(r.nominal)>0);
@@ -9228,7 +9297,7 @@ RENDERERS.jurnal = function(c){
         // menu Biaya (jalankanAutoAmortisasi), yang otomatis memprorata ke akun beban asli
         // (p.debitId) setiap hari selama jumlah hari yang diisi.
         const aktiva = akunById(srcRow.aktivaId);
-        const biayaObj = { id:uid(), tanggal:jTgl.value, bayarId:p.kreditId, bebanId:p.debitId, keterangan:jKet.value, nominal:p.nominal, amortisasi:true, periodeAmor:'hari', jumlahPeriode:Number(srcRow.amortisasiHari), periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null, prepaidId:aktiva.id };
+        const biayaObj = { id:uid(), tanggal:jTgl.value, bayarId:p.kreditId, bebanId:p.debitId, keterangan:jKet.value, nominal:p.nominal, amortisasi:true, periodeAmor:'hari', jumlahPeriode:Number(srcRow.amortisasiHari), periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null, prepaidId:aktiva.id, asal:'jurnal' };
         DB.biaya.push(biayaObj);
         markDirtySync(biayaObj.id);
         postJurnal({ tanggal:jTgl.value, keterangan:'Bayar dimuka: '+(jKet.value||akunById(p.debitId)?.nama||''), debitId:aktiva.id, kreditId:p.kreditId, nominal:p.nominal, sumber:'Biaya', ref:'biaya-bayar-'+biayaObj.id, tags, bukti });
@@ -9547,7 +9616,7 @@ function importBiayaRows(rows){
       if(!prepaidAkun){ warnings.push('Baris '+(i+2)+': akun "Dibayar Dimuka" ('+(prepaidNama||'-')+') tidak ditemukan/kosong, baris dilewati agar tidak salah posting'); return; }
     }
     const tags = parseTagInput(tagStr); tags.forEach(ensureTag);
-    const biayaObj = { id:uid(), tanggal, bayarId:bayarAkun.id, bebanId:bebanAkun.id, keterangan, nominal, amortisasi, periodeAmor: amortisasi?periodeAmor:'bulan', jumlahPeriode: amortisasi?jumlahPeriode:1, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null };
+    const biayaObj = { id:uid(), tanggal, bayarId:bayarAkun.id, bebanId:bebanAkun.id, keterangan, nominal, amortisasi, periodeAmor: amortisasi?periodeAmor:'bulan', jumlahPeriode: amortisasi?jumlahPeriode:1, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti:null, asal:'biaya' };
     DB.biaya.push(biayaObj);
     markDirtySync(biayaObj.id);
     if(amortisasi){
@@ -9651,7 +9720,7 @@ RENDERERS.biaya = function(c){
     if(reminderPayment && !bReminderTgl.value) return toast('Isi Tanggal Reminder dulu');
     const tags = parseTagInput(bTagInput.value); tags.forEach(ensureTag);
     const bukti = BUKTI_PENDING['bBukti'].length ? BUKTI_PENDING['bBukti'] : null;
-    const biayaObj = { id:uid(), tanggal:bTgl.value, bayarId, bebanId, keterangan:bKet.value, nominal, amortisasi, periodeAmor: amortisasi?periodeAmor:'bulan', jumlahPeriode: amortisasi?jumlahPeriode:1, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti, reminderPayment, reminderTanggal: reminderPayment?bReminderTgl.value:null, reminderLunas:false };
+    const biayaObj = { id:uid(), tanggal:bTgl.value, bayarId, bebanId, keterangan:bKet.value, nominal, amortisasi, periodeAmor: amortisasi?periodeAmor:'bulan', jumlahPeriode: amortisasi?jumlahPeriode:1, periodeTerposting:0, bulanTerposting:0, diperpanjang:false, tags, bukti, reminderPayment, reminderTanggal: reminderPayment?bReminderTgl.value:null, reminderLunas:false, asal:'biaya' };
     DB.biaya.push(biayaObj);
     markDirtySync(biayaObj.id);
     if(amortisasi){
