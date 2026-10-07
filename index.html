@@ -2642,6 +2642,7 @@ function freshDB(){
     coa:[], jurnal:[], pembelian:[], penjualan:[], pemakaian:[], produksiResep:[], biaya:[], produk:[], resep:[], project:[], penyesuaianStok:[],
     budgeting:[], budgetKalender:[], budgetSetting:{targetHariStok:null}, counters:{}, tags:[], lokasiCustom:[], lokasiHapus:[], lokasiBarangCustom:[], lokasiFolders:[], kategoriBarangCustom:['Peralatan','Perlengkapan'], barang:[], aset:[], budgetingTravel:[], kalenderManual:[], kalenderRekomHapus:[],
     users:[], currentUserId:null, riwayatTransaksi:[],
+    amorDihapus:[], // penanda (tombstone) jadwal amortisasi Biaya yang sengaja dihapus — lihat catatAmorDihapus()
     jenisBahanCustom:[], jenisResepCustom:['Sambal','Bumbu','Minuman','Makanan Utama','Camilan'],
     jenisAsetCustom:['Kendaraan','Mesin','Peralatan','Bangunan','Elektronik','Lainnya'],
     ruanganCustom:[],
@@ -2672,8 +2673,58 @@ function freshDB(){
      bersarang=rekursif lagi, nilai sederhana=pakai current kalau tidak kosong).
    - Nilai sederhana (angka/teks/null/kosong): pakai punya current kalau ada isinya, baru
      fallback ke punya incoming kalau current kosong/null/undefined. */
+/* ---- PENANDA HAPUS (TOMBSTONE) JADWAL AMORTISASI BIAYA ----
+   Kenapa ini perlu: mergeDbValue() di bawah adalah UNION murni per-id — item yang tidak ada di
+   satu sisi tapi masih ada di sisi lain otomatis ditambahkan kembali. Itu aman untuk "jangan
+   sampai ada data hilang", tapi akibatnya penghapusan TIDAK PERNAH bisa menang saat merge:
+   begitu ada merge dengan data cloud/backup/device lain yang belum tahu penghapusan itu
+   (merge saat boot kalau masih ada perubahan belum tersinkron, snapshot listener real-time,
+   restore backup mode "Gabung", atau konflik sinkron), jadwal amortisasi (DB.biaya) beserta
+   jurnal 'biaya-bayar-<id>' & 'biaya-amor-<id>-N'-nya MUNCUL LAGI. Perbaikannya: tiap kali
+   jadwal amortisasi sengaja dihapus, id-nya dicatat di DB.amorDihapus (ikut ter-union antar
+   device karena berisi objek ber-id), lalu setiap selesai merge/ambil data cloud,
+   terapkanAmorDihapus() membuang lagi semua DB.biaya & jurnal turunannya yang id-nya tercatat. */
+function amorDihapusIds(db){
+  const set = new Set();
+  ((db && db.amorDihapus) || []).forEach(t=>{ if(t && t.id) set.add(t.id); });
+  return set;
+}
+function catatAmorDihapus(biayaId){
+  if(!biayaId) return;
+  if(!Array.isArray(DB.amorDihapus)) DB.amorDihapus = [];
+  if(!DB.amorDihapus.some(t=> t && t.id===biayaId)) DB.amorDihapus.push({ id:biayaId, t:Date.now() });
+}
+/* Ambil id biaya dari ref jurnal amortisasi: 'biaya-amor-<id>-<N|percepat>' atau
+   'biaya-bayar-<id>'. (id dari uid() tidak pernah mengandung tanda '-'.) Sengaja TIDAK memakai
+   biayaIdFromRef() karena pola 'biaya-amor-<id>-percepat' tidak tertangkap olehnya. */
+function biayaIdDariRefAmor(ref){
+  if(typeof ref!=='string') return null;
+  let m = ref.match(/^biaya-amor-([^-]+)-/); if(m) return m[1];
+  m = ref.match(/^biaya-bayar-([^-]+)$/); if(m) return m[1];
+  return null;
+}
+/* Buang dari `db` semua jadwal amortisasi + jurnal turunannya yang tercatat di db.amorDihapus.
+   Mengubah `db` langsung (in-place) dan mengembalikan jumlah item yang dibuang. */
+function terapkanAmorDihapus(db){
+  const ids = amorDihapusIds(db);
+  if(!ids.size) return 0;
+  let n = 0;
+  if(Array.isArray(db.biaya)){
+    const before = db.biaya.length;
+    db.biaya = db.biaya.filter(b=> !(b && ids.has(b.id)));
+    n += before - db.biaya.length;
+  }
+  if(Array.isArray(db.jurnal)){
+    const before = db.jurnal.length;
+    db.jurnal = db.jurnal.filter(j=> !(j && ids.has(biayaIdDariRefAmor(j.ref))));
+    n += before - db.jurnal.length;
+  }
+  return n;
+}
 function mergeDbFull(current, incoming){
-  return mergeDbValue(current, incoming);
+  const merged = mergeDbValue(current, incoming);
+  terapkanAmorDihapus(merged); // penghapusan jadwal amortisasi harus tetap menang atas union
+  return merged;
 }
 /* Cek apakah sebuah `ref` jurnal adalah hasil posting otomatis amortisasi (Biaya atau
    Pembelian) — dipakai untuk dedup per-ref di mergeDbValue dan dedupAmorJurnalOngoing(),
@@ -2853,6 +2904,7 @@ async function load(){
   Object.keys(fresh).forEach(k=>{ if(DB[k]===undefined) DB[k] = fresh[k]; });
   ensureAutoAccounts();
   runOneTimeMigrations();
+  terapkanAmorDihapus(DB);
   jalankanAutoAmortisasi();
   jalankanAutoAmortisasiPembelian();
   jalankanAutoPenyusutanAset();
@@ -3622,14 +3674,26 @@ async function primeLastKnownCloudUpdatedAt(){
 // bukan nyangkut di data lama menunggu campur tangan manual (hapus cache dst).
 async function discardLocalAndPullFresh(ledgerId){
   try{
+    // Simpan dulu penanda hapus amortisasi milik device ini SEBELUM DB lokal diganti data cloud —
+    // kalau tidak, penghapusan jadwal amortisasi yang belum sempat tersinkron ikut terbuang dan
+    // jadwalnya "hidup lagi" dari data cloud.
+    const amorDihapusLokal = (ledgerId===activeLedgerId && DB && Array.isArray(DB.amorDihapus)) ? DB.amorDihapus.slice() : [];
     const raw = await fetchRemoteDb();
     if(raw){ await applyRemoteDb(raw); }
     clearUnsyncedFlag(ledgerId);
     clearDirtySyncIds(ledgerId);
     cloudConflictBlocked = false;
-    setSyncStatus('synced');
+    let amorDihapusBaru = false;
+    if(amorDihapusLokal.length && ledgerId===activeLedgerId){
+      if(!Array.isArray(DB.amorDihapus)) DB.amorDihapus = [];
+      amorDihapusLokal.forEach(t=>{
+        if(t && t.id && !DB.amorDihapus.some(x=> x && x.id===t.id)){ DB.amorDihapus.push(t); amorDihapusBaru = true; }
+      });
+      if(amorDihapusBaru){ terapkanAmorDihapus(DB); save(); } // save() menandai belum tersinkron -> ikut terkirim saat sinkron berikutnya
+    }
+    if(!amorDihapusBaru) setSyncStatus('synced');
     if(appBooted){ renderNav(); renderContent(); }
-    toast('⚠️ Ada perubahan dari device lain yang lebih baru — perubahan yang belum sempat tersimpan dari device ini dibuang & diganti otomatis dengan data terbaru dari cloud.');
+    toast('⚠️ Ada perubahan dari device lain yang lebih baru — perubahan yang belum sempat tersimpan dari device ini dibuang & diganti otomatis dengan data terbaru dari cloud.'+(amorDihapusBaru?' (Penghapusan riwayat amortisasi tetap dipertahankan — klik indikator sinkron untuk mengirimnya.)':''));
   }catch(e){
     console.warn('Gagal mengambil data terbaru setelah konflik:', e);
     setSyncStatus('error');
@@ -4110,9 +4174,11 @@ async function applyRemoteDb(rawJson){
   Object.keys(fresh).forEach(k=>{ if(DB[k]===undefined) DB[k] = fresh[k]; });
   ensureAutoAccounts();
   runOneTimeMigrations();
+  const amorDibuang = terapkanAmorDihapus(DB);
   try{ await idbSetLedger(storageKeyForLedger(activeLedgerId), JSON.stringify(DB)); }
   catch(err){ console.warn('Gagal menyimpan snapshot cloud ke penyimpanan lokal:', err); }
   applyingRemoteSnapshot = false;
+  if(amorDibuang>0) save(); // ada jadwal terhapus yang sempat "hidup lagi" di cloud — tandai supaya ikut dibersihkan saat sinkron
 }
 
 function nextKode(prefix){
@@ -9072,6 +9138,7 @@ function hapusRiwayatAmortisasi(biayaId){
   toRemove.forEach(j=> catatRiwayat('hapus', j));
   DB.jurnal = DB.jurnal.filter(j=> !(j.ref==='biaya-bayar-'+b.id || (j.ref||'').startsWith('biaya-amor-'+b.id+'-')));
   DB.biaya = (DB.biaya||[]).filter(x=>x.id!==biayaId);
+  catatAmorDihapus(biayaId); // supaya tidak "hidup lagi" lewat merge dgn cloud/backup/device lain
   save(); renderContent();
   toast('Riwayat amortisasi dihapus, '+toRemove.length+' transaksi ikut dihapus');
 }
@@ -9408,8 +9475,10 @@ function tanggalDariDate(d){
 function jalankanAutoAmortisasi(){
   const today = new Date(todayStr()+'T00:00:00');
   let adaPosting = false;
+  const amorMati = amorDihapusIds(DB);
   (DB.biaya||[]).forEach(b=>{
     if(!b.amortisasi || !b.prepaidId) return;
+    if(amorMati.has(b.id)) return; // jadwal ini sudah sengaja dihapus — jangan diposting lagi
     const periodeAmor = biayaPeriodeAmor(b);
     const jumlahPeriode = biayaJumlahPeriode(b);
     let terposting = biayaPeriodeTerposting(b);
@@ -9606,6 +9675,8 @@ RENDERERS.biaya = function(c){
    for non-amortized costs, the initial 'biaya-bayar-<id>' prepaid entry, and every daily/monthly
    'biaya-amor-<id>-N' amortization posting. */
 function deleteBiayaEntry(id){
+  const biayaLama = DB.biaya.find(b=>b.id===id);
+  if(biayaLama && biayaLama.amortisasi) catatAmorDihapus(id); // jadwal amortisasi: cegah muncul lagi lewat merge
   DB.biaya = DB.biaya.filter(b=>b.id!==id);
   DB.jurnal.filter(j=> !!(j.ref==='biaya-'+id || j.ref==='biaya-bayar-'+id || (j.ref||'').startsWith('biaya-amor-'+id+'-'))).forEach(j=> catatRiwayat('hapus', j));
   DB.jurnal = DB.jurnal.filter(j=> !(j.ref==='biaya-'+id || j.ref==='biaya-bayar-'+id || (j.ref||'').startsWith('biaya-amor-'+id+'-')));
