@@ -1844,6 +1844,21 @@ function cloudStorageBarHtml(bytes){
 function bindCloudStorageUsageControls(){
   const btn = document.getElementById('btnRefreshStorageUsage');
   if(btn) btn.addEventListener('click', refreshCloudStorageUsage);
+  const btnClean = document.getElementById('btnCleanOldBackups');
+  if(btnClean) btnClean.addEventListener('click', async ()=>{
+    if(!confirm('Hapus file backup lama di Cloud Storage untuk semua akun? File aktif dan file yang baru dibuat (< 10 menit) tidak akan dihapus.')) return;
+    btnClean.disabled = true; btnClean.textContent = 'Membersihkan…';
+    try{
+      const ids = (typeof ledgerAccounts!=='undefined' && ledgerAccounts.length) ? ledgerAccounts.map(a=>a.id) : [activeLedgerId];
+      let n = 0, b = 0;
+      for(const id of ids){
+        try{ const r = await cleanupOrphanStorageFiles(id, id===activeLedgerId ? lastKnownStoragePath : null, {force:true}); n += r.deleted; b += r.bytes; }
+        catch(e){ console.warn('Bersihkan gagal untuk', id, e); }
+      }
+      toast('Selesai: '+n+' file lama dihapus ('+fmtBytesHuman(b)+' dibebaskan)');
+    }catch(e){ toast('⚠️ Gagal membersihkan: '+(e.message||e)); }
+    refreshCloudStorageUsage();
+  });
   const qInput = document.getElementById('storageQuotaInput');
   if(qInput){
     const applyQuota = ()=>{
@@ -1877,6 +1892,7 @@ function renderCloudStorageUsageWrap(state, extra){
     ${cloudStorageBarHtml(bytes)}
     <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
       <button class="btn small" id="btnRefreshStorageUsage" type="button">🔄 Refresh</button>
+      <button class="btn small" id="btnCleanOldBackups" type="button">🧹 Bersihkan file lama</button>
       <span style="display:inline-flex;align-items:center;gap:5px">
         <label class="mini" for="storageQuotaInput">Kuota target (GB):</label>
         <input type="number" id="storageQuotaInput" min="1" step="1" value="${getStorageQuotaGB()}" style="width:60px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;background:var(--input-bg);color:var(--ink)">
@@ -3459,6 +3475,7 @@ async function switchLedgerAccount(newId){
   try{ localStorage.setItem(ACTIVE_LEDGER_KEY, newId); }catch(e){}
   cloudDocRef = firebaseDb.collection('ledgers').doc(newId);
   lastKnownChunkCount = 0;
+  lastKnownStoragePath = null; // jangan bawa path akun sebelumnya
   await load(); // tampilkan dulu versi lokal (atau COA baru kalau akun ini belum pernah dibuka di device ini)
   currentTab = 'dashboard';
   renderNav(); switchTab('dashboard', {skipHistory:true});
@@ -3534,6 +3551,42 @@ async function uploadDbJsonToStorage(ledgerId, jsonStr, onProgress){
   await task;
   if(typeof onProgress === 'function') onProgress(100);
   return path;
+}
+
+/* Bersihkan file backup lama (data-*.json) yang tertinggal di Storage. Penghapusan file lama
+   di pushDbToCloud() bisa gagal diam-diam (offline, tab ditutup, path lama tidak dikenal),
+   sehingga file lama menumpuk dan kapasitas naik terus. Fungsi ini menghapus SEMUA data-*.json
+   di folder ledger kecuali: (1) file yang baru saja dipakai, (2) file yang sedang dirujuk
+   dokumen Firestore saat ini, dan (3) file yang umurnya < 10 menit (bisa jadi baru diupload
+   device lain dan belum sempat tercatat di Firestore). */
+const ORPHAN_MIN_AGE_MS = 10*60*1000;
+const ORPHAN_CLEAN_INTERVAL_MS = 10*60*1000;
+const _lastOrphanClean = {};
+async function cleanupOrphanStorageFiles(ledgerId, keepPath, opts){
+  const force = !!(opts && opts.force);
+  const now = Date.now();
+  if(!force && _lastOrphanClean[ledgerId] && now-_lastOrphanClean[ledgerId] < ORPHAN_CLEAN_INTERVAL_MS) return {deleted:0, bytes:0};
+  _lastOrphanClean[ledgerId] = now;
+  const keep = new Set();
+  if(keepPath) keep.add(keepPath);
+  try{
+    const snap = await firebaseDb.collection('ledgers').doc(ledgerId).get();
+    const sp = snap.exists ? (snap.data()||{}).storagePath : null;
+    if(sp) keep.add(sp);
+    else return {deleted:0, bytes:0}; // tidak tahu file aktifnya — jangan hapus apa pun
+  }catch(e){ return {deleted:0, bytes:0}; }
+  const res = await firebaseStorage.ref('ledgers/'+ledgerId).listAll();
+  let deleted = 0, bytes = 0;
+  for(const item of res.items){
+    if(keep.has(item.fullPath)) continue;
+    if(!/^data-.*\.json$/.test(item.name)) continue;
+    try{
+      const meta = await item.getMetadata();
+      if(now - new Date(meta.timeCreated).getTime() < ORPHAN_MIN_AGE_MS) continue;
+      await item.delete(); deleted++; bytes += (meta.size||0);
+    }catch(e){ /* lewati, dicoba lagi lain waktu */ }
+  }
+  return {deleted, bytes};
 }
 
 async function downloadDbJsonFromStorage(path){
@@ -3785,6 +3838,7 @@ async function pushDbToCloud(){
     if(oldStoragePath && oldStoragePath !== newPath){
       firebaseStorage.ref(oldStoragePath).delete().catch(()=>{});
     }
+    cleanupOrphanStorageFiles(ledgerIdAtStart, newPath).catch(()=>{});
     clearUnsyncedFlag(ledgerIdAtStart);
     clearDirtySyncIds(ledgerIdAtStart);
     setSyncStatus('synced');
