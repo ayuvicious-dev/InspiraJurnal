@@ -661,6 +661,15 @@ a.crumbLink:last-child{color:var(--accent,#3b82f6);font-weight:600}
   box-shadow:0 -6px 24px rgba(44,38,32,.12);
   padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
 }
+/* Desktop/layar lebar: bar tidak dibentangkan penuh, tetap di tengah dengan lebar terbatas
+   (menempel di tepi bawah, sudut atas membulat). */
+@media (min-width:769px){
+  #bottomNav{
+    left:50%;right:auto;
+    transform:translateX(-50%);
+    width:min(94vw,640px);
+  }
+}
 #content{padding-bottom:calc(64px + 16px + env(safe-area-inset-bottom,0px) + 24px)}
 #bottomNavSheet.open{
   left:50%;right:auto;bottom:calc(78px + env(safe-area-inset-bottom,0px));
